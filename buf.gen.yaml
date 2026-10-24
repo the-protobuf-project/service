@@ -1,0 +1,23 @@
+version: v2
+
+# Regenerates the pre-compiled Go stubs for the option module this repository
+# owns: service.v1.
+#
+# Run:  buf generate --template buf.gen.yaml
+# Out:  plugin/pb/servicepbv1/*.pb.go
+#
+# module= strips this module's prefix from each go_package so the output lands
+# under plugin/pb/, the "…pbv1" shape protokit's classifier and every other
+# plugin's boundary test recognize as a plugin's own stubs.
+#
+# buf.gen.example.yaml is the separate template that runs protoc-gen-store and
+# protoc-gen-service over the examples.
+
+inputs:
+  - directory: protobuf
+
+plugins:
+  - remote: buf.build/protocolbuffers/go:v1.36.11
+    out: .
+    opt:
+      - module=github.com/the-protobuf-project/service

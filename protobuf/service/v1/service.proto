@@ -1,0 +1,153 @@
+// service.v1 is deliberately small. protoc-gen-service recognizes the AIP
+// standard methods (AIP-131..135, AIP-164) from their names and shapes alone,
+// so a conforming API needs no annotation at all. These options exist only for
+// the two things the shape cannot say: "do not generate this" and "this
+// resource emits change events".
+
+syntax = "proto3";
+
+package service.v1;
+
+option go_package = "github.com/the-protobuf-project/service/plugin/pb/servicepbv1;servicepbv1";
+option java_multiple_files = true;
+option java_outer_classname = "ServiceProto";
+option java_package = "com.service.v1";
+
+// ServiceOptions configures generation for one service.
+//
+//	service Organizations {
+//	  option (service.v1.service) = {skip: true};
+//	}
+message ServiceOptions {
+  // skip leaves the whole service to the consumer: no server, no hooks, and no
+  // entry in the package's registration.
+  bool skip = 1;
+}
+
+// MethodOptions configures generation for one method.
+//
+//	rpc DeleteCalendar(DeleteCalendarRequest) returns (google.protobuf.Empty) {
+//	  option (service.v1.method) = {custom: true};
+//	}
+message MethodOptions {
+  // custom treats a method that looks standard as custom (AIP-136): the
+  // generated server leaves it to the embedded Unimplemented server, and the
+  // consumer writes it. Use it when a standard method's behaviour is mostly
+  // business logic, rather than overriding it after generation.
+  bool custom = 1;
+}
+
+// EventOptions declares a CloudEvents event type.
+//
+// On a resource message it opts the resource into the change feed and
+// declares its lifecycle events: "<type>.created", "<type>.updated" and
+// "<type>.deleted" (AIP-164 soft delete), which a change feed tells apart from
+// the record's create_time, update_time and delete_time. The resource needs an
+// update_time and an etag, which are the feed's change log.
+//
+//	message Reservation {
+//	  option (service.v1.event) = {type: "dev.freebusy.reservation"};
+//	}
+//
+// On a value of a state enum it declares the event a record entering that
+// state emits.
+//
+//	RESERVATION_STATE_CONFIRMED = 2 [(service.v1.state_event) = {}];
+message EventOptions {
+  // The CloudEvents type, or type prefix for a resource's lifecycle events.
+  // Empty takes a default: the message's full proto name in lower case for a
+  // resource ("freebusy.reservation.v1.reservation"), and the resource's
+  // prefix plus the value's suffix in lower case for a state
+  // ("freebusy.reservation.v1.reservation.confirmed").
+  string type = 1;
+
+  // The lifecycle events to leave out, by suffix: "created", "updated",
+  // "deleted". Ignored on an enum value.
+  repeated string omit = 2;
+
+  // The resource pattern variable whose resource scopes the events, matched
+  // against a webhook's scope: "organizational_unit" scopes an event about
+  // organizationalUnits/o/holds/h to organizationalUnits/o. Empty is no
+  // scope. Ignored on an enum value.
+  string scope = 3;
+}
+
+// ErrorDomainOptions declares an enum to be a service's error reasons
+// (AIP-193): each value is a google.rpc.ErrorInfo reason in this domain.
+//
+//	enum ErrorReason {
+//	  option (service.v1.error_domain) = {domain: "freebusy.dev"};
+//	  ERROR_REASON_UNSPECIFIED = 0;
+//	  HOLD_NOT_ACTIVE = 1 [(service.v1.error_reason) = {
+//	    code: FAILED_PRECONDITION
+//	    description: "The hold expired, was released, or became a reservation."
+//	    fix: "Take a new hold."
+//	    detail: DETAIL_KIND_PRECONDITION_FAILURE
+//	  }];
+//	}
+message ErrorDomainOptions {
+  // The ErrorInfo domain, e.g. "freebusy.dev".
+  string domain = 1;
+}
+
+// ErrorReasonOptions describes one error reason.
+message ErrorReasonOptions {
+  // The detail a reason's errors carry beside the ErrorInfo.
+  enum DetailKind {
+    // No detail beyond the ErrorInfo.
+    DETAIL_KIND_UNSPECIFIED = 0;
+    // A google.rpc.BadRequest naming the request field at fault.
+    DETAIL_KIND_BAD_REQUEST = 1;
+    // A google.rpc.ResourceInfo naming the resource missing or in the way.
+    DETAIL_KIND_RESOURCE_INFO = 2;
+    // A google.rpc.PreconditionFailure naming the resource whose state
+    // forbids the call.
+    DETAIL_KIND_PRECONDITION_FAILURE = 3;
+  }
+
+  // The status code the reason is returned with, by its google.rpc.Code
+  // name: "FAILED_PRECONDITION".
+  string code = 1;
+  // What the reason means, for the error reference.
+  string description = 2;
+  // What a caller does about it, for the error reference and the default
+  // fix of the generated constructor.
+  string fix = 3;
+  // The detail the reason's errors carry.
+  DetailKind detail = 4;
+  // Whether retrying the same request can succeed.
+  bool retryable = 5;
+  // Whether the reason gets a sentinel error of its own, bound to its code:
+  // errors wrapping it map to this reason without naming it.
+  bool sentinel = 6;
+}
+
+// AdapterOptions marks a resource as the record a runtime-go store keeps, so
+// the generator emits the adapter between that store's interface and the
+// resource's generated repository.
+//
+//	message Delivery {
+//	  option (service.v1.adapter) = {role: ROLE_DELIVERY};
+//	}
+message AdapterOptions {
+  // The runtime-go record a resource stores.
+  enum Role {
+    // Not a store record.
+    ROLE_UNSPECIFIED = 0;
+    // events.Webhook.
+    ROLE_WEBHOOK = 1;
+    // events.Delivery.
+    ROLE_DELIVERY = 2;
+    // events.Cursor.
+    ROLE_FEED_CURSOR = 3;
+    // idempotency.Key.
+    ROLE_IDEMPOTENCY_KEY = 4;
+  }
+
+  // The record the resource stores.
+  Role role = 1;
+  // Field names that differ from the conventional ones, keyed by the
+  // conventional name: {key: "position" value: "position_time"}. See the
+  // README for each role's conventional fields.
+  map<string, string> fields = 2;
+}

@@ -1,0 +1,453 @@
+{{ .Banner }}
+
+package {{ .Package }}
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+{{ with .S }}{{ $s := . }}
+// {{ .GoName }}Repositories are the generated repositories {{ .GoName }}Server
+// persists through, each opened by its schema package's New.
+type {{ .GoName }}Repositories struct {
+{{- range .Resources }}
+	{{ .Field }} {{ .Repo }}
+{{- end }}
+}
+
+// {{ .GoName }}Hooks is the business logic {{ .GoName }}Server runs around its
+// standard methods. Embed Nop{{ .GoName }}Hooks and implement only the hooks
+// you need. An error a hook returns fails the call, rendered by the server's
+// problem.Translator: a *problem.Problem (servicex.BadField, Missing,
+// Blocked), an error wrapping a registered sentinel, or a gRPC status.
+type {{ .GoName }}Hooks interface {
+{{- range .Hooks }}
+	// {{ .Doc }}
+	{{ .Name }}({{ .Params }}) error
+{{- end }}
+}
+
+// Nop{{ .GoName }}Hooks implements every hook as doing nothing.
+type Nop{{ .GoName }}Hooks struct{}
+
+var _ {{ .GoName }}Hooks = Nop{{ .GoName }}Hooks{}
+{{ range .Hooks }}
+// {{ .Name }} does nothing.
+func (Nop{{ $s.GoName }}Hooks) {{ .Name }}({{ .Params }}) error { return nil }
+{{ end }}
+// {{ .GoName }}Server serves {{ .FullName }}'s AIP standard methods over the
+// generated repositories.
+{{- if .Custom }}
+//
+// Custom methods are answered by the embedded Unimplemented{{ .GoName }}Server
+// until you write them: embed *{{ .GoName }}Server in a type of your own and
+// define {{ range $i, $m := .Custom }}{{ if $i }}, {{ end }}{{ $m }}{{ end }} on it. Define a standard method there too to
+// replace the generated one.
+{{- end }}
+type {{ .GoName }}Server struct {
+	{{ .Grpc }}.Unimplemented{{ .GoName }}Server
+
+	repos {{ .GoName }}Repositories
+	hooks {{ .GoName }}Hooks
+	opts  servicex.Options
+}
+
+var _ {{ .Grpc }}.{{ .GoName }}Server = (*{{ .GoName }}Server)(nil)
+
+// New{{ .GoName }}Server returns the {{ .GoName }}Server over repos running hooks
+// (nil runs none). Errors carry the ErrorInfo domain {{ quote .Domain }}
+// unless servicex.WithTranslator says otherwise.
+func New{{ .GoName }}Server(repos {{ .GoName }}Repositories, hooks {{ .GoName }}Hooks, opts ...servicex.Option) *{{ .GoName }}Server {
+	if hooks == nil {
+		hooks = Nop{{ .GoName }}Hooks{}
+	}
+	return &{{ .GoName }}Server{
+		repos: repos,
+		hooks: hooks,
+		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator({{ quote .Domain }})}, opts),
+	}
+}
+
+// Options are the server's options, for a custom method that traces and
+// renders its errors the way the generated ones do (Options().Run).
+func (s *{{ .GoName }}Server) Options() servicex.Options { return s.opts }
+
+// Repositories are the repositories the server persists through.
+func (s *{{ .GoName }}Server) Repositories() {{ .GoName }}Repositories { return s.repos }
+{{ range .Resources }}{{ template "resource" (dict "S" $s "R" .) }}{{ end }}
+{{- range .Methods }}{{ $v := dict "S" $s "M" . "R" .R }}{{ if eq .Kind "Get" }}{{ template "methodGet" $v }}{{ else if eq .Kind "List" }}{{ template "methodList" $v }}{{ else if eq .Kind "Create" }}{{ template "methodCreate" $v }}{{ else if eq .Kind "Update" }}{{ template "methodUpdate" $v }}{{ else if eq .Kind "Delete" }}{{ template "methodDelete" $v }}{{ else if eq .Kind "Undelete" }}{{ template "methodUndelete" $v }}{{ else if eq .Kind "Purge" }}{{ template "methodPurge" $v }}{{ end }}{{ end }}
+{{- end }}
+
+{{- define "resource" }}{{ $s := .S }}{{ $r := .R }}
+const {{ $r.Var }}Type = {{ quote $r.Type }}
+
+var (
+	{{ $r.Var }}Collections = {{ $r.Collections }}
+{{- if $r.Parented }}
+	{{ $r.Var }}Parent      = {{ $r.Parent }}
+{{- end }}
+	{{ $r.Var }}Required    = {{ $r.Required }}
+	{{ $r.Var }}OutputOnly  = {{ $r.OutputOnly }}
+{{- if $r.HasImmut }}
+	{{ $r.Var }}Immutable   = {{ $r.Immutable }}
+{{- end }}
+)
+{{- if $r.HookCreate }}
+// create{{ $r.GoName }} is AIP-133's create of in under parent, named name
+// ("" has the repository mint an id), shared by Create{{ $r.GoName }} and an
+// allow_missing update.
+func (s *{{ $s.GoName }}Server) create{{ $r.GoName }}(ctx context.Context, parent, name string, in *{{ $r.PB }}, validateOnly bool) (*{{ $r.PB }}, error) {
+	servicex.ClearOutputOnly(in, {{ $r.Var }}OutputOnly)
+	in.Name = name
+	if err := servicex.Required(in, {{ quote $r.Singular }}, {{ $r.Var }}Required); err != nil {
+		return nil, err
+	}
+{{- if $r.Parented }}
+	if err := s.hooks.ParentCheck{{ $r.GoName }}(ctx, servicex.OpCreate, parent); err != nil {
+		return nil, err
+	}
+{{- end }}
+	if err := s.hooks.Validate{{ $r.GoName }}(ctx, servicex.OpCreate, in, nil); err != nil {
+		return nil, err
+	}
+	if err := s.hooks.BeforeCreate{{ $r.GoName }}(ctx, parent, in); err != nil {
+		return nil, err
+	}
+	if validateOnly {
+		return in, nil
+	}
+	out, err := s.repos.{{ $r.Field }}.Create(ctx, {{ if $r.Parented }}parent, {{ end }}in)
+	if err != nil {
+		return nil, servicex.AlreadyExistsAs(err, {{ $r.Var }}Type, name, "Choose another {{ $r.Singular }}_id, or leave it empty to have one assigned")
+	}
+	if err := s.hooks.AfterCreate{{ $r.GoName }}(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+{{ end }}
+{{- end }}
+
+{{- define "methodGet" }}{{ $s := .S }}{{ $m := .M }}{{ $r := .R }}
+// {{ $m.GoName }} is AIP-131's Get: the {{ $r.Singular }} by name, deleted or not.
+func (s *{{ $s.GoName }}Server) {{ $m.GoName }}(ctx context.Context, req *{{ $m.Req }}) (*{{ $m.Resp }}, error) {
+	var out *{{ $m.Resp }}
+	err := s.opts.Run(ctx, {{ quote $s.GoName }}, {{ quote $m.GoName }}, func(ctx context.Context) (err error) {
+		name := req.{{ $m.Name }}
+		if err := servicex.CheckName("name", name, false, {{ $r.Var }}Collections...); err != nil {
+			return err
+		}
+		out, err = s.repos.{{ $r.Field }}.Get(ctx, name)
+		return servicex.NotFoundAs(err, {{ $r.Var }}Type, name)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+{{ end }}
+
+{{- define "methodList" }}{{ $s := .S }}{{ $m := .M }}{{ $r := .R }}
+// {{ $m.GoName }} is AIP-132's List: one page of {{ $r.Singular }} records{{ if $r.Parented }} under
+// parent (AIP-159 "-" ids read across parents){{ end }},
+// filtered (AIP-160) and ordered (AIP-132) by the repository.
+func (s *{{ $s.GoName }}Server) {{ $m.GoName }}(ctx context.Context, req *{{ $m.Req }}) (*{{ $m.Resp }}, error) {
+	out := &{{ $m.Resp }}{}
+	err := s.opts.Run(ctx, {{ quote $s.GoName }}, {{ quote $m.GoName }}, func(ctx context.Context) (err error) {
+{{- if $r.Parented }}
+		parent := req.{{ $m.Parent }}
+		if err := servicex.CheckName("parent", parent, true, {{ $r.Var }}Parent...); err != nil {
+			return err
+		}
+		if err := s.hooks.ParentCheck{{ $r.GoName }}(ctx, servicex.OpList, parent); err != nil {
+			return err
+		}
+{{- end }}
+{{- if $m.PageSize }}
+		if req.{{ $m.PageSize }} < 0 {
+			return servicex.BadField(servicex.ReasonInvalidArgument, "page_size", "page_size must not be negative", "Send 0 for the default page size")
+		}
+{{- end }}
+		in := repox.ListInput{
+{{- if $m.PageSize }}
+			PageSize: req.{{ $m.PageSize }},
+{{- end }}
+{{- if $m.PageToken }}
+			PageToken: req.{{ $m.PageToken }},
+{{- end }}
+{{- if $m.Filter }}
+			Filter: req.{{ $m.Filter }},
+{{- end }}
+{{- if $m.OrderBy }}
+			OrderBy: req.{{ $m.OrderBy }},
+{{- end }}
+{{- if $m.ShowDeleted }}
+			ShowDeleted: req.{{ $m.ShowDeleted }},
+{{- end }}
+{{- if $m.ReadMask }}
+			ReadMask: req.{{ $m.ReadMask }}.GetPaths(),
+{{- end }}
+		}
+		out.{{ $m.Items }}, out.{{ $m.Next }}, err = s.repos.{{ $r.Field }}.List(ctx, {{ if $r.Parented }}parent, {{ end }}in)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+{{ end }}
+
+{{- define "methodCreate" }}{{ $s := .S }}{{ $m := .M }}{{ $r := .R }}
+// {{ $m.GoName }} is AIP-133's Create.{{ if $m.ID }} {{ $m.IDField }} names the
+// {{ $r.Singular }} (AIP-122); empty has the repository mint an id.{{ end }}
+func (s *{{ $s.GoName }}Server) {{ $m.GoName }}(ctx context.Context, req *{{ $m.Req }}) (*{{ $m.Resp }}, error) {
+	var out *{{ $m.Resp }}
+	err := s.opts.Run(ctx, {{ quote $s.GoName }}, {{ quote $m.GoName }}, func(ctx context.Context) (err error) {
+		if req.{{ $m.Body }} == nil {
+			return servicex.BadField(servicex.ReasonRequiredField, {{ quote $m.BodyField }}, "{{ $m.BodyField }} is required", "Send the {{ $r.Singular }} to write")
+		}
+		in := proto.Clone(req.{{ $m.Body }}).(*{{ $r.PB }})
+{{- if $r.Parented }}
+		parent := req.{{ $m.Parent }}
+		if err := servicex.CheckName("parent", parent, false, {{ $r.Var }}Parent...); err != nil {
+			return err
+		}
+{{- else }}
+		parent := ""
+{{- end }}
+		name := ""
+{{- if $m.ID }}
+		id := req.{{ $m.ID }}
+		if err := servicex.CheckID({{ quote $m.IDField }}, id); err != nil {
+			return err
+		}
+		if id != "" {
+			name = {{ if $r.Parented }}parent + "/{{ $r.Collection }}/" + id{{ else }}"{{ $r.Collection }}/" + id{{ end }}
+		}
+{{- end }}
+		out, err = s.create{{ $r.GoName }}(ctx, parent, name, in, {{ if $m.ValidateOnly }}req.{{ $m.ValidateOnly }}{{ else }}false{{ end }})
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+{{ end }}
+
+{{- define "methodUpdate" }}{{ $s := .S }}{{ $m := .M }}{{ $r := .R }}
+// {{ $m.GoName }} is AIP-134's Update: the fields update_mask names ("*" for
+// every mutable one, absent for the ones the request sets), guarded by the
+// record's etag when it carries one.
+func (s *{{ $s.GoName }}Server) {{ $m.GoName }}(ctx context.Context, req *{{ $m.Req }}) (*{{ $m.Resp }}, error) {
+	var out *{{ $m.Resp }}
+	err := s.opts.Run(ctx, {{ quote $s.GoName }}, {{ quote $m.GoName }}, func(ctx context.Context) (err error) {
+		in := req.{{ $m.Body }}
+		if in == nil {
+			return servicex.BadField(servicex.ReasonRequiredField, {{ quote $m.BodyField }}, "{{ $m.BodyField }} is required", "Send the {{ $r.Singular }} to write")
+		}
+		name := in.GetName()
+		if err := servicex.CheckName("{{ $m.BodyField }}.name", name, false, {{ $r.Var }}Collections...); err != nil {
+			return err
+		}
+		paths, err := servicex.UpdatePaths(in, {{ if $m.UpdateMask }}req.{{ $m.UpdateMask }}{{ else }}nil{{ end }}, {{ quote $m.BodyField }}, {{ $r.Var }}OutputOnly)
+		if err != nil {
+			return err
+		}
+{{- if or $r.HasImmut $m.AllowMissing $m.ValidateOnly }}
+		if {{ if $r.HasImmut }}servicex.TouchesAny(paths, {{ $r.Var }}Immutable){{ else }}false{{ end }}{{ if $m.AllowMissing }} || req.{{ $m.AllowMissing }}{{ end }}{{ if $m.ValidateOnly }} || req.{{ $m.ValidateOnly }}{{ end }} {
+			existing, err := s.repos.{{ $r.Field }}.Get(ctx, name)
+{{- if $m.AllowMissing }}
+			if req.{{ $m.AllowMissing }} && servicex.IsNotFound(err) {
+				// AIP-134 allow_missing: an update of nothing creates it.
+				out, err = s.create{{ $r.GoName }}(ctx, servicex.ParentOf(name), name, proto.Clone(in).(*{{ $r.PB }}), {{ if $m.ValidateOnly }}req.{{ $m.ValidateOnly }}{{ else }}false{{ end }})
+				return err
+			}
+{{- end }}
+			if err != nil {
+				return servicex.NotFoundAs(err, {{ $r.Var }}Type, name)
+			}
+{{- if $r.HasImmut }}
+			if err := servicex.CheckImmutable({{ quote $m.BodyField }}, existing, in, paths, {{ $r.Var }}Immutable); err != nil {
+				return err
+			}
+{{- end }}
+{{- if $m.ValidateOnly }}
+			if req.{{ $m.ValidateOnly }} {
+{{- if $r.HasEtag }}
+				if err := servicex.CheckEtag({{ $r.Var }}Type, name, in.GetEtag(), existing.GetEtag()); err != nil {
+					return err
+				}
+{{- end }}
+				preview := proto.Clone(existing).(*{{ $r.PB }})
+				servicex.Merge(preview, in, paths)
+				if err := s.hooks.Validate{{ $r.GoName }}(ctx, servicex.OpUpdate, preview, paths); err != nil {
+					return err
+				}
+				if err := s.hooks.BeforeUpdate{{ $r.GoName }}(ctx, preview, paths); err != nil {
+					return err
+				}
+				out = preview
+				return nil
+			}
+{{- else }}
+			_ = existing
+{{- end }}
+		}
+{{- end }}
+		if err := s.hooks.Validate{{ $r.GoName }}(ctx, servicex.OpUpdate, in, paths); err != nil {
+			return err
+		}
+		if err := s.hooks.BeforeUpdate{{ $r.GoName }}(ctx, in, paths); err != nil {
+			return err
+		}
+		out, err = s.repos.{{ $r.Field }}.Update(ctx, in, paths)
+		if err != nil {
+			return servicex.NotFoundAs(err, {{ $r.Var }}Type, name)
+		}
+		return s.hooks.AfterUpdate{{ $r.GoName }}(ctx, out)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+{{ end }}
+
+{{- define "precheck" }}{{ $m := .M }}{{ $r := .R }}
+{{- if or $m.Etag $m.ValidateOnly }}
+		var existing *{{ $r.PB }}
+		if {{ if $m.Etag }}req.{{ $m.Etag }} != ""{{ else }}false{{ end }}{{ if $m.ValidateOnly }} || req.{{ $m.ValidateOnly }}{{ end }} {
+			var err error
+			existing, err = s.repos.{{ $r.Field }}.Get(ctx, name)
+{{- if $m.AllowMissing }}
+			if req.{{ $m.AllowMissing }} && servicex.IsNotFound(err) {
+				return nil
+			}
+{{- end }}
+			if err != nil {
+				return servicex.NotFoundAs(err, {{ $r.Var }}Type, name)
+			}
+{{- if and $m.Etag $r.HasEtag }}
+			if err := servicex.CheckEtag({{ $r.Var }}Type, name, req.{{ $m.Etag }}, existing.GetEtag()); err != nil {
+				return err
+			}
+{{- end }}
+		}
+		_ = existing
+{{- end }}
+{{- end }}
+
+{{- define "methodDelete" }}{{ $s := .S }}{{ $m := .M }}{{ $r := .R }}
+// {{ $m.GoName }} is AIP-135's Delete: a soft delete
+// (AIP-164) when the {{ $r.Singular }} has a delete_time, so Get still
+// returns it and Undelete restores it.
+func (s *{{ $s.GoName }}Server) {{ $m.GoName }}(ctx context.Context, req *{{ $m.Req }}) (*{{ if $m.ReturnsEmpty }}{{ $s.EmptyQ }}.Empty{{ else }}{{ $m.Resp }}{{ end }}, error) {
+{{- if not $m.ReturnsEmpty }}
+	var out *{{ $m.Resp }}
+{{- end }}
+	err := s.opts.Run(ctx, {{ quote $s.GoName }}, {{ quote $m.GoName }}, func(ctx context.Context) error {
+		name := req.{{ $m.Name }}
+		if err := servicex.CheckName("name", name, false, {{ $r.Var }}Collections...); err != nil {
+			return err
+		}
+{{- template "precheck" . }}
+		if err := s.hooks.BeforeDelete{{ $r.GoName }}(ctx, name, {{ if $m.Force }}req.{{ $m.Force }}{{ else }}false{{ end }}); err != nil {
+			return err
+		}
+{{- if $m.ValidateOnly }}
+		if req.{{ $m.ValidateOnly }} {
+{{- if not $m.ReturnsEmpty }}
+			out = existing
+{{- end }}
+			return nil
+		}
+{{- end }}
+		err := s.repos.{{ $r.Field }}.Delete(ctx, name)
+{{- if $m.AllowMissing }}
+		if req.{{ $m.AllowMissing }} && servicex.IsNotFound(err) {
+			return nil
+		}
+{{- end }}
+		if err != nil {
+			return servicex.NotFoundAs(err, {{ $r.Var }}Type, name)
+		}
+{{- if not $m.ReturnsEmpty }}
+		out, err = s.repos.{{ $r.Field }}.Get(ctx, name)
+		if err != nil && !servicex.IsNotFound(err) {
+			return err
+		}
+{{- end }}
+		return s.hooks.AfterDelete{{ $r.GoName }}(ctx, name)
+	})
+	if err != nil {
+		return nil, err
+	}
+{{- if $m.ReturnsEmpty }}
+	return &{{ $s.EmptyQ }}.Empty{}, nil
+{{- else }}
+	if out == nil {
+		// allow_missing on a name that was never there: nothing to return.
+		out = &{{ $m.Resp }}{Name: req.{{ $m.Name }}}
+	}
+	return out, nil
+{{- end }}
+}
+{{ end }}
+
+{{- define "methodUndelete" }}{{ $s := .S }}{{ $m := .M }}{{ $r := .R }}
+// {{ $m.GoName }} is AIP-164's Undelete: the soft-deleted {{ $r.Singular }}
+// restored. ALREADY_EXISTS when it is not deleted.
+func (s *{{ $s.GoName }}Server) {{ $m.GoName }}(ctx context.Context, req *{{ $m.Req }}) (*{{ $m.Resp }}, error) {
+	var out *{{ $m.Resp }}
+	err := s.opts.Run(ctx, {{ quote $s.GoName }}, {{ quote $m.GoName }}, func(ctx context.Context) (err error) {
+		name := req.{{ $m.Name }}
+		if err := servicex.CheckName("name", name, false, {{ $r.Var }}Collections...); err != nil {
+			return err
+		}
+{{- template "precheck" . }}
+		if err := s.hooks.BeforeUndelete{{ $r.GoName }}(ctx, name); err != nil {
+			return err
+		}
+{{- if $m.ValidateOnly }}
+		if req.{{ $m.ValidateOnly }} {
+			out = existing
+			return nil
+		}
+{{- end }}
+		out, err = s.repos.{{ $r.Field }}.Undelete(ctx, name)
+		if err != nil {
+			return servicex.AlreadyExistsAs(servicex.NotFoundAs(err, {{ $r.Var }}Type, name), {{ $r.Var }}Type, name, "It is not deleted, so there is nothing to restore")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+{{ end }}
+
+{{- define "methodPurge" }}{{ $s := .S }}{{ $m := .M }}{{ $r := .R }}
+// {{ $m.GoName }} removes the {{ $r.Singular }} for good, deleted or not
+// (AIP-164). A record something still refers to is kept, as the repository's
+// Purge keeps it.
+func (s *{{ $s.GoName }}Server) {{ $m.GoName }}(ctx context.Context, req *{{ $m.Req }}) (*{{ $s.EmptyQ }}.Empty, error) {
+	err := s.opts.Run(ctx, {{ quote $s.GoName }}, {{ quote $m.GoName }}, func(ctx context.Context) error {
+		name := req.{{ $m.Name }}
+		if err := servicex.CheckName("name", name, false, {{ $r.Var }}Collections...); err != nil {
+			return err
+		}
+		if err := s.repos.{{ $r.Field }}.{{ $r.Remove }}(ctx, name); err != nil {
+			return servicex.NotFoundAs(err, {{ $r.Var }}Type, name)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &{{ $s.EmptyQ }}.Empty{}, nil
+}
+{{ end }}

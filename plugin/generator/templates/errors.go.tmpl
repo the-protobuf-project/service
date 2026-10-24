@@ -1,0 +1,85 @@
+{{ .Banner }}
+
+package {{ .Package }}
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+// ErrorDomain is the google.rpc.ErrorInfo domain of this package's reasons
+// ({{ range $i, $e := .Enums }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}).
+const ErrorDomain = {{ quote .Domain }}
+
+// The reasons, as ErrorInfo carries them. They are part of the API.
+const (
+{{- range .Reasons }}
+	// Reason{{ .GoName }} ({{ .CodeName }}): {{ .Description }}
+	Reason{{ .GoName }} = {{ quote .Name }}
+{{- end }}
+)
+{{ $sentinels := false }}{{ range .Reasons }}{{ if .Sentinel }}{{ $sentinels = true }}{{ end }}{{ end }}
+{{- if $sentinels }}
+// The sentinels: an error wrapping one maps to its reason and code.
+var (
+{{- range .Reasons }}{{ if .Sentinel }}
+	Err{{ .GoName }} = errors.New({{ quote .Name }})
+{{- end }}{{ end }}
+)
+{{ end }}
+// Kinds bind the sentinels to their codes and reasons.
+func Kinds() []problem.Kind {
+	return []problem.Kind{
+{{- range .Reasons }}{{ if .Sentinel }}
+		{Err: Err{{ .GoName }}, Code: codes.{{ .Code }}, Reason: Reason{{ .GoName }}},
+{{- end }}{{ end }}
+	}
+}
+
+// Reasons declare every reason, with its code and meaning.
+func Reasons() []problem.Reason {
+	return []problem.Reason{
+{{- range .Reasons }}
+		{Name: Reason{{ .GoName }}, Code: codes.{{ .Code }}, Description: {{ quote .Description }}},
+{{- end }}
+	}
+}
+
+// NewTranslator is the translator of this package's errors and the generated
+// servers': kinds (any of your own) first, then Kinds() and servicex.Kinds(),
+// with every reason declared. Pass it to each server with
+// servicex.WithTranslator, and use it as the interceptor of hand-written
+// services so all of them speak one vocabulary.
+func NewTranslator(kinds ...problem.Kind) *problem.Translator {
+	return servicex.NewTranslator(ErrorDomain, append(kinds, Kinds()...)...).Declare(Reasons()...)
+}
+
+// Retryable reports whether retrying a call that failed with reason can
+// succeed.
+func Retryable(reason string) bool {
+	switch reason {
+{{- range .Reasons }}{{ if .Retryable }}
+	case Reason{{ .GoName }}:
+		return true
+{{- end }}{{ end }}
+	}
+	return false
+}
+{{ range .Reasons }}
+// New{{ .GoName }} is a {{ .Name }} problem{{ if .Fix }}; its fix defaults to the
+// proto's: {{ quote .Fix }}{{ end }}.
+{{- if eq .Detail "BadRequest" }}
+func New{{ .GoName }}(field, what string) *problem.Problem {
+	return &problem.Problem{ {{- if .Sentinel }}Kind: Err{{ .GoName }}, {{ end }}Reason: Reason{{ .GoName }}, Field: field, What: what, Fix: {{ quote .Fix }}}
+}
+{{- else if or (eq .Detail "ResourceInfo") (eq .Detail "PreconditionFailure") }}
+func New{{ .GoName }}(resourceType, name, what string) *problem.Problem {
+	return &problem.Problem{ {{- if .Sentinel }}Kind: Err{{ .GoName }}, {{ end }}Reason: Reason{{ .GoName }}, ResourceType: resourceType, ResourceName: name, What: what, Fix: {{ quote .Fix }}}
+}
+{{- else }}
+func New{{ .GoName }}(what string) *problem.Problem {
+	return &problem.Problem{ {{- if .Sentinel }}Kind: Err{{ .GoName }}, {{ end }}Reason: Reason{{ .GoName }}, What: what, Fix: {{ quote .Fix }}}
+}
+{{- end }}
+{{ end }}

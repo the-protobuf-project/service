@@ -1,0 +1,88 @@
+{{ .Banner }}
+
+package {{ .Package }}
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+{{ range .Feeds }}{{ $f := . }}
+// The CloudEvents types of {{ .GoName }}'s changes.
+const (
+{{- range .Lifecycle }}
+	{{ $f.GoName }}{{ .GoName }}Event = {{ quote .Type }}
+{{- end }}
+{{- range .States }}
+	{{ .Const }} = {{ quote .Type }}
+{{- end }}
+)
+{{ if .StateEnum }}
+// {{ .GoName }}StateEventType is the event a {{ .GoName }} entering state
+// emits, and whether that state declares one.
+func {{ .GoName }}StateEventType(state {{ .StateEnum }}) (string, bool) {
+	switch state {
+{{- range .States }}
+	case {{ .Value }}:
+		return {{ .Const }}, true
+{{- end }}
+	}
+	return "", false
+}
+{{ end }}
+// {{ .GoName }}EventType is the event type of a change to r: the event its
+// state declares{{ if .Lifecycle }}, else what last happened to it{{ end }}; "" for a change
+// nobody is sent.
+func {{ .GoName }}EventType(r *{{ .PB }}) string {
+{{- if .StateEnum }}
+	if t, ok := {{ .GoName }}StateEventType(r.{{ .StateGet }}); ok {
+		return t
+	}
+{{- end }}
+{{- if .Lifecycle }}
+	switch servicex.Lifecycle({{ if .CreateGet }}r.{{ .CreateGet }}{{ else }}nil{{ end }}, r.GetUpdateTime(), {{ if .DeleteGet }}r.{{ .DeleteGet }}{{ else }}nil{{ end }}) {
+{{- range .Lifecycle }}
+	case events.{{ .GoName }}:
+		return {{ $f.GoName }}{{ .GoName }}Event
+{{- end }}
+	}
+{{- end }}
+	return ""
+}
+
+// {{ .GoName }}FeedSpec reads {{ .GoName }} changes through repo, ordered by
+// update time{{ if .Wildcard }}, across every parent ({{ .Wildcard }}){{ end }}, for runtime-go's events
+// dispatcher. Wrap it to change what an event is called or carries.
+func {{ .GoName }}FeedSpec(repo {{ .Repo }}) events.FeedSpec[*{{ .PB }}] {
+	return events.FeedSpec[*{{ .PB }}]{
+		ID:       {{ quote .ID }},
+		ReadMask: {{ .Mask }},
+		List: func(ctx context.Context, q events.Query) ([]*{{ .PB }}, string, error) {
+			return repo.List(ctx, {{ if .Wildcard }}{{ quote .Wildcard }}, {{ end }}servicex.FeedInput(q))
+		},
+		Change: func(r *{{ .PB }}) events.Change {
+			return events.Change{Type: {{ .GoName }}EventType(r), Time: servicex.Time(r.GetUpdateTime()){{ if .Scope }}, Scope: servicex.Scope(r.GetName(), {{ quote .Scope }}){{ end }}}
+		},
+		Data: func(r *{{ .PB }}) ([]byte, error) { return protojson.Marshal(r) },
+	}
+}
+
+// {{ .GoName }}Feed is {{ .GoName }}FeedSpec as an events.Feed.
+func {{ .GoName }}Feed(repo {{ .Repo }}) events.Feed {
+	return events.NewFeed({{ .GoName }}FeedSpec(repo))
+}
+{{ end }}
+// EventTypes are every event type this package's feeds send, for a
+// subscription to be checked against.
+func EventTypes() []string {
+	return []string{
+{{- range .Feeds }}{{ $f := . }}
+{{- range .Lifecycle }}
+		{{ $f.GoName }}{{ .GoName }}Event,
+{{- end }}
+{{- range .States }}
+		{{ .Const }},
+{{- end }}
+{{- end }}
+	}
+}

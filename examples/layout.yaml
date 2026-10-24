@@ -1,0 +1,16 @@
+# The database layout of the examples: one database, a schema per proto
+# package (acme.calendar.v1 -> schema "calendar"). protoc-gen-store and
+# protoc-gen-service both read it -- the store to name the repository
+# packages, this plugin to import them by those names -- so it is one file.
+strip_version: true
+datasources:
+  # Named apart from its proto package: a schema "idempotency" would make the
+  # repository package idempotency, the same name as runtime-go's
+  # grpc/idempotency, and the generated adapter imports both. protoc-gen-service
+  # refuses that rather than alias an import; this is the fix it points to.
+  - match: "acme.idempotency.**"
+    database: acme
+    schema: requestkeys
+  - match: "acme.**"
+    database: acme
+    schema: "{leaf}"

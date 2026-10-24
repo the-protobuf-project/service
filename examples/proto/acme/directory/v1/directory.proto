@@ -1,0 +1,328 @@
+// The tenancy tree freebusy books under, after RFC 4519: organizations, and
+// the organizational units (sites) that belong to them, and the bookable
+// resources at each site. Every method here is standard, so the generated
+// servers serve all of them; a consumer adds hooks only.
+
+syntax = "proto3";
+
+package acme.directory.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/the-protobuf-project/service/examples/generated/go/acme/directory/v1;directoryv1";
+option java_multiple_files = true;
+option java_outer_classname = "DirectoryProto";
+option java_package = "com.acme.directory.v1";
+
+// Organizations serves organizations.
+service Organizations {
+  option (google.api.default_host) = "directory.acme.example";
+
+  // Gets an organization.
+  rpc GetOrganization(GetOrganizationRequest) returns (Organization) {
+    option (google.api.http) = {get: "/v1/{name=organizations/*}"};
+    option (google.api.method_signature) = "name";
+  }
+
+  // Lists organizations.
+  rpc ListOrganizations(ListOrganizationsRequest) returns (ListOrganizationsResponse) {
+    option (google.api.http) = {get: "/v1/organizations"};
+  }
+
+  // Creates an organization.
+  rpc CreateOrganization(CreateOrganizationRequest) returns (Organization) {
+    option (google.api.http) = {
+      post: "/v1/organizations"
+      body: "organization"
+    };
+    option (google.api.method_signature) = "organization,organization_id";
+  }
+
+  // Updates an organization.
+  rpc UpdateOrganization(UpdateOrganizationRequest) returns (Organization) {
+    option (google.api.http) = {
+      patch: "/v1/{organization.name=organizations/*}"
+      body: "organization"
+    };
+    option (google.api.method_signature) = "organization,update_mask";
+  }
+
+  // Deletes an organization.
+  rpc DeleteOrganization(DeleteOrganizationRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/{name=organizations/*}"};
+    option (google.api.method_signature) = "name";
+  }
+
+  // Undeletes an organization.
+  rpc UndeleteOrganization(UndeleteOrganizationRequest) returns (Organization) {
+    option (google.api.http) = {
+      post: "/v1/{name=organizations/*}:undelete"
+      body: "*"
+    };
+  }
+}
+
+// OrganizationalUnits serves organizational units.
+service OrganizationalUnits {
+  option (google.api.default_host) = "directory.acme.example";
+
+  // Gets an organizational unit.
+  rpc GetOrganizationalUnit(GetOrganizationalUnitRequest) returns (OrganizationalUnit) {
+    option (google.api.http) = {get: "/v1/{name=organizationalUnits/*}"};
+    option (google.api.method_signature) = "name";
+  }
+
+  // Lists organizational units.
+  rpc ListOrganizationalUnits(ListOrganizationalUnitsRequest) returns (ListOrganizationalUnitsResponse) {
+    option (google.api.http) = {get: "/v1/organizationalUnits"};
+  }
+
+  // Creates an organizational unit.
+  rpc CreateOrganizationalUnit(CreateOrganizationalUnitRequest) returns (OrganizationalUnit) {
+    option (google.api.http) = {
+      post: "/v1/organizationalUnits"
+      body: "organizational_unit"
+    };
+    option (google.api.method_signature) = "organizational_unit,organizational_unit_id";
+  }
+
+  // Updates an organizational unit.
+  rpc UpdateOrganizationalUnit(UpdateOrganizationalUnitRequest) returns (OrganizationalUnit) {
+    option (google.api.http) = {
+      patch: "/v1/{organizational_unit.name=organizationalUnits/*}"
+      body: "organizational_unit"
+    };
+    option (google.api.method_signature) = "organizational_unit,update_mask";
+  }
+
+  // Deletes an organizational unit.
+  rpc DeleteOrganizationalUnit(DeleteOrganizationalUnitRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/{name=organizationalUnits/*}"};
+    option (google.api.method_signature) = "name";
+  }
+
+  // Undeletes an organizational unit.
+  rpc UndeleteOrganizationalUnit(UndeleteOrganizationalUnitRequest) returns (OrganizationalUnit) {
+    option (google.api.http) = {
+      post: "/v1/{name=organizationalUnits/*}:undelete"
+      body: "*"
+    };
+  }
+}
+
+// An organization: the tenant everything else belongs to.
+message Organization {
+  option (google.api.resource) = {
+    type: "directory.acme.example/Organization"
+    pattern: "organizations/{organization}"
+    singular: "organization"
+    plural: "organizations"
+  };
+
+  // The resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // What the organization is called.
+  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // A tax or registry number, fixed once set.
+  string registration = 3 [(google.api.field_behavior) = IMMUTABLE];
+
+  // When it was created.
+  google.protobuf.Timestamp create_time = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // When it last changed.
+  google.protobuf.Timestamp update_time = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The concurrency token.
+  string etag = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // When it was deleted (AIP-164).
+  google.protobuf.Timestamp delete_time = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // When it goes for good (AIP-164).
+  google.protobuf.Timestamp purge_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// An organizational unit: a site resources are booked at.
+message OrganizationalUnit {
+  option (google.api.resource) = {
+    type: "directory.acme.example/OrganizationalUnit"
+    pattern: "organizationalUnits/{organizational_unit}"
+    singular: "organizationalUnit"
+    plural: "organizationalUnits"
+  };
+
+  // The resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // What the site is called.
+  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // The organization it belongs to.
+  string organization = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "directory.acme.example/Organization"
+  ];
+
+  // When it was created.
+  google.protobuf.Timestamp create_time = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // When it last changed.
+  google.protobuf.Timestamp update_time = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The concurrency token.
+  string etag = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // When it was deleted (AIP-164).
+  google.protobuf.Timestamp delete_time = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // When it goes for good (AIP-164).
+  google.protobuf.Timestamp purge_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Request for GetOrganization.
+message GetOrganizationRequest {
+  // The organization.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "directory.acme.example/Organization"
+  ];
+}
+
+// Request for ListOrganizations.
+message ListOrganizationsRequest {
+  // The page size.
+  int32 page_size = 1 [(google.api.field_behavior) = OPTIONAL];
+  // The page token.
+  string page_token = 2 [(google.api.field_behavior) = OPTIONAL];
+  // An AIP-160 filter.
+  string filter = 3 [(google.api.field_behavior) = OPTIONAL];
+  // An AIP-132 order.
+  string order_by = 4 [(google.api.field_behavior) = OPTIONAL];
+  // Include deleted organizations.
+  bool show_deleted = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response of ListOrganizations.
+message ListOrganizationsResponse {
+  // The page.
+  repeated Organization organizations = 1;
+  // The next page's token.
+  string next_page_token = 2;
+}
+
+// Request for CreateOrganization.
+message CreateOrganizationRequest {
+  // The organization.
+  Organization organization = 1 [(google.api.field_behavior) = REQUIRED];
+  // Its id; empty mints one.
+  string organization_id = 2 [(google.api.field_behavior) = OPTIONAL];
+  // Check without writing.
+  bool validate_only = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request for UpdateOrganization.
+message UpdateOrganizationRequest {
+  // The organization.
+  Organization organization = 1 [(google.api.field_behavior) = REQUIRED];
+  // The fields to update.
+  google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = OPTIONAL];
+  // Create it when missing.
+  bool allow_missing = 3 [(google.api.field_behavior) = OPTIONAL];
+  // Check without writing.
+  bool validate_only = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request for DeleteOrganization.
+message DeleteOrganizationRequest {
+  // The organization.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "directory.acme.example/Organization"
+  ];
+  // The etag the caller read.
+  string etag = 2 [(google.api.field_behavior) = OPTIONAL];
+  // Succeed when it is missing.
+  bool allow_missing = 3 [(google.api.field_behavior) = OPTIONAL];
+  // Check without deleting.
+  bool validate_only = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request for UndeleteOrganization.
+message UndeleteOrganizationRequest {
+  // The organization.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "directory.acme.example/Organization"
+  ];
+}
+
+// Request for GetOrganizationalUnit.
+message GetOrganizationalUnitRequest {
+  // The organizational unit.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "directory.acme.example/OrganizationalUnit"
+  ];
+}
+
+// Request for ListOrganizationalUnits.
+message ListOrganizationalUnitsRequest {
+  // The page size.
+  int32 page_size = 1 [(google.api.field_behavior) = OPTIONAL];
+  // The page token.
+  string page_token = 2 [(google.api.field_behavior) = OPTIONAL];
+  // An AIP-160 filter.
+  string filter = 3 [(google.api.field_behavior) = OPTIONAL];
+  // Include deleted units.
+  bool show_deleted = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response of ListOrganizationalUnits.
+message ListOrganizationalUnitsResponse {
+  // The page.
+  repeated OrganizationalUnit organizational_units = 1;
+  // The next page's token.
+  string next_page_token = 2;
+}
+
+// Request for CreateOrganizationalUnit.
+message CreateOrganizationalUnitRequest {
+  // The organizational unit.
+  OrganizationalUnit organizational_unit = 1 [(google.api.field_behavior) = REQUIRED];
+  // Its id; empty mints one.
+  string organizational_unit_id = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request for UpdateOrganizationalUnit.
+message UpdateOrganizationalUnitRequest {
+  // The organizational unit.
+  OrganizationalUnit organizational_unit = 1 [(google.api.field_behavior) = REQUIRED];
+  // The fields to update.
+  google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request for DeleteOrganizationalUnit.
+message DeleteOrganizationalUnitRequest {
+  // The organizational unit.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "directory.acme.example/OrganizationalUnit"
+  ];
+}
+
+// Request for UndeleteOrganizationalUnit.
+message UndeleteOrganizationalUnitRequest {
+  // The organizational unit.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "directory.acme.example/OrganizationalUnit"
+  ];
+}

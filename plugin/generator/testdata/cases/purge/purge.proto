@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+// A testdata-only case: shapes the examples cannot carry because they are
+// held to api-linter. A single-resource Purge (AIP-165's Purge is a bulk LRO,
+// so this is a deliberate extension), a standard-looking method kept custom by
+// option, a skipped service, a singleton, and a nested resource whose List
+// lacks a parent -- each of which must stay custom rather than be guessed at.
+package archive.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "service/v1/annotations.proto";
+
+option go_package = "example.com/archive/v1;archivev1";
+
+// Documents serves documents.
+service Documents {
+  // Gets a document.
+  rpc GetDocument(GetDocumentRequest) returns (Document);
+  // Deletes a document.
+  rpc DeleteDocument(DeleteDocumentRequest) returns (Document);
+  // Purges a document for good.
+  rpc PurgeDocument(PurgeDocumentRequest) returns (google.protobuf.Empty);
+  // Gets a document, but by hand.
+  rpc GetDocumentByHand(GetDocumentRequest) returns (Document);
+  // A standard name kept custom by option.
+  rpc UndeleteDocument(UndeleteDocumentRequest) returns (Document) {
+    option (service.v1.method) = {custom: true};
+  }
+  // Lists pages without a parent: stays custom.
+  rpc ListPages(ListPagesRequest) returns (ListPagesResponse);
+  // Gets the settings singleton: stays custom.
+  rpc GetSettings(GetSettingsRequest) returns (Settings);
+}
+
+// Skipped is left entirely to the consumer.
+service Skipped {
+  option (service.v1.service) = {skip: true};
+  // Gets a document.
+  rpc GetDocument(GetDocumentRequest) returns (Document);
+}
+
+// A document.
+message Document {
+  option (google.api.resource) = {
+    type: "archive.example/Document"
+    pattern: "documents/{document}"
+  };
+  // The resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // The title.
+  string title = 2 [(google.api.field_behavior) = REQUIRED];
+  // The concurrency token.
+  string etag = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // When it was deleted.
+  google.protobuf.Timestamp delete_time = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A page of a document.
+message Page {
+  option (google.api.resource) = {
+    type: "archive.example/Page"
+    pattern: "documents/{document}/pages/{page}"
+  };
+  // The resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // The text.
+  string text = 2;
+}
+
+// The archive's settings, a singleton.
+message Settings {
+  option (google.api.resource) = {
+    type: "archive.example/Settings"
+    pattern: "settings"
+  };
+  // The resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+}
+
+// Request for GetDocument.
+message GetDocumentRequest {
+  // The document.
+  string name = 1;
+}
+
+// Request for DeleteDocument.
+message DeleteDocumentRequest {
+  // The document.
+  string name = 1;
+  // The etag the caller read.
+  string etag = 2;
+  // Succeed when missing.
+  bool allow_missing = 3;
+  // Check without deleting.
+  bool validate_only = 4;
+  // Delete its pages too.
+  bool force = 5;
+}
+
+// Request for PurgeDocument.
+message PurgeDocumentRequest {
+  // The document.
+  string name = 1;
+}
+
+// Request for UndeleteDocument.
+message UndeleteDocumentRequest {
+  // The document.
+  string name = 1;
+}
+
+// Request for ListPages.
+message ListPagesRequest {
+  // The page size.
+  int32 page_size = 1;
+}
+
+// Response of ListPages.
+message ListPagesResponse {
+  // The page.
+  repeated Page pages = 1;
+  // The next token.
+  string next_page_token = 2;
+}
+
+// Request for GetSettings.
+message GetSettingsRequest {
+  // The settings.
+  string name = 1;
+}

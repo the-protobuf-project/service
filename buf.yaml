@@ -1,0 +1,46 @@
+version: v2
+
+# This buf.yaml defines a workspace:
+#   protobuf/service/ — the publishable BSR module buf.build/the-protobuf-project/service
+#   examples/proto/   — sample annotated protos the examples and integration tests
+#                       generate from (local only, never pushed)
+#
+# The module is rooted at protobuf/ with `includes`, not at protobuf/service/,
+# because buf derives a proto's import path from its module root: rooted here it
+# publishes "service/v1/annotations.proto", which is what every importing proto
+# writes. This mirrors how store publishes store.v1 and cache publishes cache.v1.
+#
+# Only protobuf/ has a BSR name, so publish with:
+#   buf push --exclude-unnamed
+modules:
+  - path: protobuf
+    includes: [protobuf/service]
+    name: buf.build/the-protobuf-project/service
+
+  - path: examples/proto
+    # examples/proto imports googleapis from the BSR deps below; service.v1
+    # comes from this workspace. Its services follow AIP rather than buf's
+    # STANDARD naming -- a Get returns the resource, a service is named for
+    # its collection -- so the rules that contradict AIP are off for it alone;
+    # api-linter (scripts/aip.sh) holds it to AIP instead.
+    lint:
+      use:
+        - STANDARD
+      except:
+        - RPC_REQUEST_RESPONSE_UNIQUE
+        - RPC_RESPONSE_STANDARD_NAME
+        - SERVICE_SUFFIX
+
+deps:
+  - buf.build/googleapis/googleapis
+  - buf.build/the-protobuf-project/store # entity/v1 + store/v1, for the examples
+
+lint:
+  use:
+    - STANDARD
+  except:
+    - PACKAGE_VERSION_SUFFIX # service.v1 is intentionally version-suffixed
+
+breaking:
+  use:
+    - FILE

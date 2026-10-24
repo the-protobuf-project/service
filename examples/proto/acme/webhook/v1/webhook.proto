@@ -1,0 +1,135 @@
+// The records runtime-go's webhook dispatcher keeps -- webhooks, their
+// deliveries and the feed cursors -- each stored through a generated
+// repository behind the generated events.Store adapter.
+
+syntax = "proto3";
+
+package acme.webhook.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/timestamp.proto";
+import "service/v1/annotations.proto";
+
+option go_package = "github.com/the-protobuf-project/service/examples/generated/go/acme/webhook/v1;webhookv1";
+option java_multiple_files = true;
+option java_outer_classname = "WebhookProto";
+option java_package = "com.acme.webhook.v1";
+
+// A webhook: an endpoint subscribed to changes.
+message Webhook {
+  option (google.api.resource) = {
+    type: "webhook.acme.example/Webhook"
+    pattern: "webhooks/{webhook}"
+    singular: "webhook"
+    plural: "webhooks"
+  };
+  option (service.v1.adapter) = {
+    role: ROLE_WEBHOOK
+    fields: [
+      {
+        key: "scope"
+        value: "organizational_unit"
+      }
+    ]
+  };
+
+  // The resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // The endpoint.
+  string uri = 2 [(google.api.field_behavior) = REQUIRED];
+  // The event types it is sent; empty is all.
+  repeated string event_types = 3 [(google.api.field_behavior) = OPTIONAL];
+  // The site it is limited to.
+  string organizational_unit = 4 [(google.api.field_behavior) = OPTIONAL];
+  // Whether it is sent nothing for now; its deliveries wait.
+  bool paused = 5 [(google.api.field_behavior) = OPTIONAL];
+  // The signing secret, sealed.
+  string secret = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // When it was created.
+  google.protobuf.Timestamp create_time = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // When it last changed.
+  google.protobuf.Timestamp update_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The concurrency token.
+  string etag = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A delivery: one change recorded for one webhook.
+message Delivery {
+  option (google.api.resource) = {
+    type: "webhook.acme.example/Delivery"
+    pattern: "webhooks/{webhook}/deliveries/{delivery}"
+    singular: "delivery"
+    plural: "deliveries"
+  };
+  option (service.v1.adapter) = {role: ROLE_DELIVERY};
+
+  // Where a delivery stands.
+  enum State {
+    // Unset.
+    STATE_UNSPECIFIED = 0;
+    // Waiting for its next attempt.
+    STATE_PENDING = 1;
+    // Accepted.
+    STATE_SUCCEEDED = 2;
+    // Out of attempts.
+    STATE_FAILED = 3;
+  }
+
+  // The resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // The CloudEvent id.
+  string event_id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The CloudEvent type.
+  string event_type = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The record the event is about.
+  string subject = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The request body.
+  string payload = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Where it stands.
+  State state = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // How many attempts so far.
+  int32 attempt_count = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // When it is next due.
+  google.protobuf.Timestamp next_attempt_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The last HTTP status.
+  int32 response_code = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The last failure.
+  string error_message = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // When it was accepted.
+  google.protobuf.Timestamp deliver_time = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // When it was recorded.
+  google.protobuf.Timestamp create_time = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // When it last changed.
+  google.protobuf.Timestamp update_time = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The concurrency token.
+  string etag = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A feed cursor: how far a change feed has been read.
+message FeedCursor {
+  option (google.api.resource) = {
+    type: "webhook.acme.example/FeedCursor"
+    pattern: "feedCursors/{feed_cursor}"
+    singular: "feedCursor"
+    plural: "feedCursors"
+  };
+  option (service.v1.adapter) = {
+    role: ROLE_FEED_CURSOR
+    fields: [
+      {
+        key: "position"
+        value: "position_time"
+      }
+    ]
+  };
+
+  // The resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // The latest update time read.
+  google.protobuf.Timestamp position_time = 2 [(google.api.field_behavior) = REQUIRED];
+  // When it last changed.
+  google.protobuf.Timestamp update_time = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The concurrency token.
+  string etag = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+}

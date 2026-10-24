@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package service.v1;
+
+import "google/protobuf/descriptor.proto";
+import "service/v1/service.proto";
+
+option go_package = "github.com/the-protobuf-project/service/plugin/pb/servicepbv1;servicepbv1";
+option java_multiple_files = true;
+option java_outer_classname = "AnnotationsProto";
+option java_package = "com.service.v1";
+
+// annotations.proto is the single import a schema author needs for service.v1:
+//
+//	import "service/v1/annotations.proto";
+//
+// # Extension numbers
+//
+// 53000-53006, clear of store.v1 (50010-50014), entity.v1 (51000-51002) and
+// cache.v1 (52000-52003). mcp.v1 also uses 51000-51006, on the service and
+// method options, which is why this block starts above all of them.
+
+extend google.protobuf.ServiceOptions {
+  // service configures generation for a service.
+  ServiceOptions service = 53000;
+}
+
+extend google.protobuf.MethodOptions {
+  // method configures generation for a method.
+  MethodOptions method = 53001;
+}
+
+extend google.protobuf.MessageOptions {
+  // event opts a resource into the change feed and declares its lifecycle
+  // events.
+  EventOptions event = 53002;
+
+  // adapter marks a resource as a runtime-go store's record.
+  AdapterOptions adapter = 53006;
+}
+
+extend google.protobuf.EnumValueOptions {
+  // state_event declares the event a record entering this state emits.
+  EventOptions state_event = 53003;
+
+  // error_reason describes a value of an error_domain enum.
+  ErrorReasonOptions error_reason = 53005;
+}
+
+extend google.protobuf.EnumOptions {
+  // error_domain declares an enum to be a service's error reasons.
+  ErrorDomainOptions error_domain = 53004;
+}

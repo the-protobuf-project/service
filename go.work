@@ -1,0 +1,12 @@
+// Groups the plugin and its examples for an editor and a repository-wide
+// go test. No replace directives: each go.mod pins what it uses.
+//
+// ./examples is left out until runtime-go's events module and its
+// grpc/problem and grpc/idempotency packages are on main: the generated code
+// the examples compile imports them, so until then the examples build only in
+// a workspace that also uses a local runtime-go checkout (README,
+// "Developing"). Add ./examples back, and pin those modules in
+// examples/go.mod with `go get ...@main`, once they are pushed.
+go 1.26.5
+
+use .

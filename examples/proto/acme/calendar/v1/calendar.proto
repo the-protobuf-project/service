@@ -1,0 +1,383 @@
+// Calendars and the events on them, after RFC 5545: a nested resource
+// (calendars/{calendar}/events/{event}) and custom methods beside the
+// standard ones, which the generated servers leave to the consumer.
+
+syntax = "proto3";
+
+package acme.calendar.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "service/v1/annotations.proto";
+
+option go_package = "github.com/the-protobuf-project/service/examples/generated/go/acme/calendar/v1;calendarv1";
+option java_multiple_files = true;
+option java_outer_classname = "CalendarProto";
+option java_package = "com.acme.calendar.v1";
+
+// Calendars serves calendars.
+service Calendars {
+  option (google.api.default_host) = "calendar.acme.example";
+
+  // Gets a calendar.
+  rpc GetCalendar(GetCalendarRequest) returns (Calendar) {
+    option (google.api.http) = {get: "/v1/{name=calendars/*}"};
+    option (google.api.method_signature) = "name";
+  }
+
+  // Lists calendars.
+  rpc ListCalendars(ListCalendarsRequest) returns (ListCalendarsResponse) {
+    option (google.api.http) = {get: "/v1/calendars"};
+  }
+
+  // Creates a calendar.
+  rpc CreateCalendar(CreateCalendarRequest) returns (Calendar) {
+    option (google.api.http) = {
+      post: "/v1/calendars"
+      body: "calendar"
+    };
+    option (google.api.method_signature) = "calendar,calendar_id";
+  }
+
+  // Updates a calendar.
+  rpc UpdateCalendar(UpdateCalendarRequest) returns (Calendar) {
+    option (google.api.http) = {
+      patch: "/v1/{calendar.name=calendars/*}"
+      body: "calendar"
+    };
+    option (google.api.method_signature) = "calendar,update_mask";
+  }
+
+  // Deletes a calendar; force deletes its events with it.
+  rpc DeleteCalendar(DeleteCalendarRequest) returns (Calendar) {
+    option (google.api.http) = {delete: "/v1/{name=calendars/*}"};
+    option (google.api.method_signature) = "name";
+  }
+
+  // Undeletes a calendar.
+  rpc UndeleteCalendar(UndeleteCalendarRequest) returns (Calendar) {
+    option (google.api.http) = {
+      post: "/v1/{name=calendars/*}:undelete"
+      body: "*"
+    };
+  }
+
+  // Reports how busy a calendar is (custom, AIP-136).
+  rpc QueryFreeBusy(QueryFreeBusyRequest) returns (QueryFreeBusyResponse) {
+    option (google.api.http) = {get: "/v1/{name=calendars/*}:queryFreeBusy"};
+  }
+}
+
+// Events serves the events on calendars.
+service Events {
+  option (google.api.default_host) = "calendar.acme.example";
+
+  // Gets an event.
+  rpc GetEvent(GetEventRequest) returns (Event) {
+    option (google.api.http) = {get: "/v1/{name=calendars/*/events/*}"};
+    option (google.api.method_signature) = "name";
+  }
+
+  // Lists a calendar's events.
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {
+    option (google.api.http) = {get: "/v1/{parent=calendars/*}/events"};
+    option (google.api.method_signature) = "parent";
+  }
+
+  // Creates an event.
+  rpc CreateEvent(CreateEventRequest) returns (Event) {
+    option (google.api.http) = {
+      post: "/v1/{parent=calendars/*}/events"
+      body: "event"
+    };
+    option (google.api.method_signature) = "parent,event,event_id";
+  }
+
+  // Updates an event.
+  rpc UpdateEvent(UpdateEventRequest) returns (Event) {
+    option (google.api.http) = {
+      patch: "/v1/{event.name=calendars/*/events/*}"
+      body: "event"
+    };
+    option (google.api.method_signature) = "event,update_mask";
+  }
+
+  // Deletes an event.
+  rpc DeleteEvent(DeleteEventRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/{name=calendars/*/events/*}"};
+    option (google.api.method_signature) = "name";
+  }
+
+  // Undeletes an event.
+  rpc UndeleteEvent(UndeleteEventRequest) returns (Event) {
+    option (google.api.http) = {
+      post: "/v1/{name=calendars/*/events/*}:undelete"
+      body: "*"
+    };
+  }
+
+  // Lists a recurring event's instances (custom, AIP-136).
+  rpc ExpandEvent(ExpandEventRequest) returns (ExpandEventResponse) {
+    option (google.api.http) = {get: "/v1/{name=calendars/*/events/*}:expand"};
+  }
+}
+
+// A calendar.
+message Calendar {
+  option (google.api.resource) = {
+    type: "calendar.acme.example/Calendar"
+    pattern: "calendars/{calendar}"
+    singular: "calendar"
+    plural: "calendars"
+  };
+
+  // The resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // What the calendar is called.
+  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // The IANA time zone.
+  string time_zone = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // When it was created.
+  google.protobuf.Timestamp create_time = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // When it last changed.
+  google.protobuf.Timestamp update_time = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The concurrency token.
+  string etag = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // When it was deleted (AIP-164).
+  google.protobuf.Timestamp delete_time = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // When it goes for good (AIP-164).
+  google.protobuf.Timestamp purge_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// An event on a calendar.
+message Event {
+  option (google.api.resource) = {
+    type: "calendar.acme.example/Event"
+    pattern: "calendars/{calendar}/events/{event}"
+    singular: "event"
+    plural: "events"
+  };
+  option (service.v1.event) = {
+    type: "example.acme.calendar.event"
+    scope: "calendar"
+  };
+
+  // The resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // A one-line summary.
+  string summary = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // When it starts.
+  google.protobuf.Timestamp start_time = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // When it ends.
+  google.protobuf.Timestamp end_time = 4 [(google.api.field_behavior) = OPTIONAL];
+
+  // When it was created.
+  google.protobuf.Timestamp create_time = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // When it last changed.
+  google.protobuf.Timestamp update_time = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The concurrency token.
+  string etag = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // When it was deleted (AIP-164).
+  google.protobuf.Timestamp delete_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // When it goes for good (AIP-164).
+  google.protobuf.Timestamp purge_time = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Request for GetCalendar.
+message GetCalendarRequest {
+  // The calendar.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "calendar.acme.example/Calendar"
+  ];
+}
+
+// Request for ListCalendars.
+message ListCalendarsRequest {
+  // The page size.
+  int32 page_size = 1 [(google.api.field_behavior) = OPTIONAL];
+  // The page token.
+  string page_token = 2 [(google.api.field_behavior) = OPTIONAL];
+  // An AIP-160 filter.
+  string filter = 3 [(google.api.field_behavior) = OPTIONAL];
+  // An AIP-132 order.
+  string order_by = 4 [(google.api.field_behavior) = OPTIONAL];
+  // Include deleted calendars.
+  bool show_deleted = 5 [(google.api.field_behavior) = OPTIONAL];
+  // The fields to read (AIP-157).
+  google.protobuf.FieldMask read_mask = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response of ListCalendars.
+message ListCalendarsResponse {
+  // The page.
+  repeated Calendar calendars = 1;
+  // The next page's token.
+  string next_page_token = 2;
+}
+
+// Request for CreateCalendar.
+message CreateCalendarRequest {
+  // The calendar.
+  Calendar calendar = 1 [(google.api.field_behavior) = REQUIRED];
+  // Its id; empty mints one.
+  string calendar_id = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request for UpdateCalendar.
+message UpdateCalendarRequest {
+  // The calendar.
+  Calendar calendar = 1 [(google.api.field_behavior) = REQUIRED];
+  // The fields to update.
+  google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request for DeleteCalendar.
+message DeleteCalendarRequest {
+  // The calendar.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "calendar.acme.example/Calendar"
+  ];
+  // Delete its events with it.
+  bool force = 2 [(google.api.field_behavior) = OPTIONAL];
+  // The etag the caller read.
+  string etag = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request for UndeleteCalendar.
+message UndeleteCalendarRequest {
+  // The calendar.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "calendar.acme.example/Calendar"
+  ];
+  // The etag the caller read.
+  string etag = 2 [(google.api.field_behavior) = OPTIONAL];
+  // Check without restoring.
+  bool validate_only = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request for QueryFreeBusy.
+message QueryFreeBusyRequest {
+  // The calendar.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "calendar.acme.example/Calendar"
+  ];
+}
+
+// Response of QueryFreeBusy.
+message QueryFreeBusyResponse {
+  // How many events the calendar has.
+  int32 busy = 1;
+}
+
+// Request for GetEvent.
+message GetEventRequest {
+  // The event.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "calendar.acme.example/Event"
+  ];
+}
+
+// Request for ListEvents.
+message ListEventsRequest {
+  // The calendar.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "calendar.acme.example/Calendar"
+  ];
+  // The page size.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+  // The page token.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+  // An AIP-160 filter.
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+  // An AIP-132 order.
+  string order_by = 5 [(google.api.field_behavior) = OPTIONAL];
+  // Include deleted events.
+  bool show_deleted = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response of ListEvents.
+message ListEventsResponse {
+  // The page.
+  repeated Event events = 1;
+  // The next page's token.
+  string next_page_token = 2;
+}
+
+// Request for CreateEvent.
+message CreateEventRequest {
+  // The calendar.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "calendar.acme.example/Calendar"
+  ];
+  // The event.
+  Event event = 2 [(google.api.field_behavior) = REQUIRED];
+  // Its id; empty mints one.
+  string event_id = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request for UpdateEvent.
+message UpdateEventRequest {
+  // The event.
+  Event event = 1 [(google.api.field_behavior) = REQUIRED];
+  // The fields to update.
+  google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Request for DeleteEvent.
+message DeleteEventRequest {
+  // The event.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "calendar.acme.example/Event"
+  ];
+}
+
+// Request for UndeleteEvent.
+message UndeleteEventRequest {
+  // The event.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "calendar.acme.example/Event"
+  ];
+}
+
+// Request for ExpandEvent.
+message ExpandEventRequest {
+  // The event.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "calendar.acme.example/Event"
+  ];
+}
+
+// Response of ExpandEvent.
+message ExpandEventResponse {
+  // The instances.
+  repeated Event events = 1;
+}

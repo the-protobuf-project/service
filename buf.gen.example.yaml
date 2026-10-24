@@ -1,0 +1,61 @@
+version: v2
+
+# Generates everything the examples compile and the integration tests run:
+# the messages, gRPC stubs, REST gateway and MCP bindings; protoc-gen-store's
+# GORM models, stores, filters and repositories; and this plugin's servers,
+# feeds, error reasons and store adapters over them.
+#
+# Run from the repository root, with protoc-gen-service built into bin/:
+#   go build -o bin/protoc-gen-service ./plugin/cmd/protoc-gen-service
+#   PATH="$PWD/bin:$PATH" buf generate --template buf.gen.example.yaml
+#
+# strategy: all on the store and service plugins: both must see every proto
+# in one invocation to agree on one database.
+
+clean: true
+
+inputs:
+  - directory: examples/proto
+
+plugins:
+  - remote: buf.build/protocolbuffers/go:v1.36.11
+    out: examples/generated/go
+    opt: module=github.com/the-protobuf-project/service/examples/generated/go
+  - local: protoc-gen-go-grpc
+    out: examples/generated/go
+    opt: module=github.com/the-protobuf-project/service/examples/generated/go
+  - remote: buf.build/grpc-ecosystem/gateway:v2.27.4
+    out: examples/generated/go
+    opt: module=github.com/the-protobuf-project/service/examples/generated/go
+  - local: protoc-gen-mcp
+    out: examples/generated/go
+    opt:
+      - lang=go
+      - module=github.com/the-protobuf-project/service/examples/generated/go
+
+  - local: protoc-gen-store
+    out: examples/generated/gorm
+    strategy: all
+    opt:
+      - target=gorm
+      - stores=true
+      - converters=true
+      - filters=true
+      - go_module=github.com/the-protobuf-project/service/examples/generated/gorm
+      - config=examples/layout.yaml
+  - local: protoc-gen-store
+    out: examples/generated/repository
+    strategy: all
+    opt:
+      - target=repository
+      - go_module=github.com/the-protobuf-project/service/examples/generated/repository
+      - gorm_module=github.com/the-protobuf-project/service/examples/generated/gorm
+      - config=examples/layout.yaml
+
+  - local: protoc-gen-service
+    out: examples/generated/service
+    strategy: all
+    opt:
+      - go_module=github.com/the-protobuf-project/service/examples/generated/service
+      - repository_module=github.com/the-protobuf-project/service/examples/generated/repository
+      - config=examples/layout.yaml

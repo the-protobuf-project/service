@@ -1,0 +1,56 @@
+// The record runtime-go's idempotency interceptor keeps, stored through a
+// generated repository behind the generated idempotency.Store adapter.
+
+syntax = "proto3";
+
+package acme.idempotency.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/field_info.proto";
+import "google/api/resource.proto";
+import "google/protobuf/timestamp.proto";
+import "service/v1/annotations.proto";
+
+option go_package = "github.com/the-protobuf-project/service/examples/generated/go/acme/idempotency/v1;idempotencyv1";
+option java_multiple_files = true;
+option java_outer_classname = "IdempotencyProto";
+option java_package = "com.acme.idempotency.v1";
+
+// An idempotency key: one (method, request_id) and its first response.
+message IdempotencyKey {
+  option (google.api.resource) = {
+    type: "idempotency.acme.example/IdempotencyKey"
+    pattern: "idempotencyKeys/{idempotency_key}"
+    singular: "idempotencyKey"
+    plural: "idempotencyKeys"
+  };
+  option (service.v1.adapter) = {role: ROLE_IDEMPOTENCY_KEY};
+
+  // Where an idempotency key stands.
+  enum State {
+    // Unset.
+    STATE_UNSPECIFIED = 0;
+    // The first call is running.
+    STATE_IN_FLIGHT = 1;
+    // The first call succeeded.
+    STATE_DONE = 2;
+  }
+
+  // The resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // The full method.
+  string method = 2 [(google.api.field_behavior) = REQUIRED];
+  // The caller's request id.
+  string request_id = 3 [
+    (google.api.field_info).format = UUID4,
+    (google.api.field_behavior) = REQUIRED
+  ];
+  // Where it stands.
+  State state = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The first response.
+  string response = 5 [(google.api.field_behavior) = OPTIONAL];
+  // When it was claimed.
+  google.protobuf.Timestamp create_time = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // When it last changed.
+  google.protobuf.Timestamp update_time = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+}

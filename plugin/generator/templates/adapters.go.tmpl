@@ -1,0 +1,359 @@
+{{ .Banner }}
+
+package {{ .Package }}
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+{{ with .Events }}{{ $w := .Webhook }}{{ $d := .Delivery }}{{ $c := .Cursor }}{{ $e := . }}
+// EventStore is runtime-go's events.Store over the generated webhook,
+// delivery and feed cursor repositories, on either backend they were opened
+// on.
+type EventStore struct {
+	Webhooks   {{ .WebhookRepo }}
+	Deliveries {{ .DeliveryRepo }}
+	Cursors    {{ .CursorRepo }}
+	// PageSize is the page ListWebhooks reads; 0 is 100.
+	PageSize int32
+}
+
+var _ events.Store = (*EventStore)(nil)
+
+// eventWebhook is the events view of a stored webhook.
+func eventWebhook(m *{{ .WebhookPB }}) events.Webhook {
+	return events.Webhook{
+		Name: m.GetName(),
+		URI:  m.{{ (index $w "uri").Get }},
+{{- with index $w "event_types" }}
+		EventTypes: m.{{ .Get }},
+{{- end }}
+{{- with index $w "scope" }}
+		Scope: m.{{ .Get }},
+{{- end }}
+{{- with index $w "paused" }}
+		Paused: m.{{ .Get }},
+{{- else }}{{ if $e.PausedValue }}
+		Paused: m.{{ (index $w "state").Get }} == {{ $e.PausedValue }},
+{{- end }}{{ end }}
+{{- with index $w "secret" }}
+		Secret: m.{{ .Get }},
+{{- end }}
+{{- with index $w "previous_secret" }}
+		PreviousSecret: m.{{ .Get }},
+{{- end }}
+{{- with index $w "rotate_time" }}
+		RotateTime: servicex.Time(m.{{ .Get }}),
+{{- end }}
+{{- with index $w "create_time" }}
+		CreateTime: servicex.Time(m.{{ .Get }}),
+{{- end }}
+	}
+}
+
+// ListWebhooks implements events.Store.
+func (s *EventStore) ListWebhooks(ctx context.Context, pageToken string) ([]events.Webhook, string, error) {
+	size := s.PageSize
+	if size <= 0 {
+		size = 100
+	}
+	page, next, err := s.Webhooks.List(ctx, repox.ListInput{PageSize: size, PageToken: pageToken})
+	if err != nil {
+		return nil, "", err
+	}
+	out := make([]events.Webhook, 0, len(page))
+	for _, m := range page {
+		out = append(out, eventWebhook(m))
+	}
+	return out, next, nil
+}
+
+// GetWebhook implements events.Store: a deleted webhook is not found.
+func (s *EventStore) GetWebhook(ctx context.Context, name string) (events.Webhook, error) {
+	m, err := s.Webhooks.Get(ctx, name)
+	if err != nil {
+		return events.Webhook{}, servicex.StoreErr(err, events.ErrNotFound, nil, nil)
+	}
+{{- with index $w "delete_time" }}
+	if m.{{ .Get }} != nil {
+		return events.Webhook{}, fmt.Errorf("%w: %s is deleted", events.ErrNotFound, name)
+	}
+{{- end }}
+	return eventWebhook(m), nil
+}
+
+// cursorName is where feed's cursor is stored.
+func cursorName(feed string) string { return {{ quote .CursorCollection }} + "/" + feed }
+
+func eventCursor(feed string, m *{{ .CursorPB }}) events.Cursor {
+	return events.Cursor{Feed: feed, Position: servicex.Time(m.{{ (index $c "position").Get }}), Etag: m.{{ (index $c "etag").Get }}}
+}
+
+// GetCursor implements events.Store.
+func (s *EventStore) GetCursor(ctx context.Context, feed string) (events.Cursor, error) {
+	m, err := s.Cursors.Get(ctx, cursorName(feed))
+	if err != nil {
+		return events.Cursor{}, servicex.StoreErr(err, events.ErrNotFound, nil, nil)
+	}
+	return eventCursor(feed, m), nil
+}
+
+// CreateCursor implements events.Store.
+func (s *EventStore) CreateCursor(ctx context.Context, c events.Cursor) (events.Cursor, error) {
+	m, err := s.Cursors.Create(ctx, &{{ .CursorPB }}{Name: cursorName(c.Feed), {{ (index $c "position").GoName }}: servicex.Timestamp(c.Position)})
+	if err != nil {
+		return events.Cursor{}, servicex.StoreErr(err, nil, events.ErrAlreadyExists, nil)
+	}
+	return eventCursor(c.Feed, m), nil
+}
+
+// UpdateCursor implements events.Store.
+func (s *EventStore) UpdateCursor(ctx context.Context, c events.Cursor) error {
+	m := &{{ .CursorPB }}{Name: cursorName(c.Feed), {{ (index $c "position").GoName }}: servicex.Timestamp(c.Position), {{ (index $c "etag").GoName }}: c.Etag}
+{{- if (index $c "position").OutputOnly }}
+	_, err := s.Cursors.UpdateOutputOnly(ctx, m, []string{ {{- quote (index $c "position").Proto -}} })
+{{- else }}
+	_, err := s.Cursors.Update(ctx, m, []string{ {{- quote (index $c "position").Proto -}} })
+{{- end }}
+	return servicex.StoreErr(err, events.ErrNotFound, nil, events.ErrConflict)
+}
+
+func eventDeliveryState(m *{{ .DeliveryPB }}) events.DeliveryState {
+	switch m.{{ (index $d "state").Get }} {
+	case {{ .Pending }}:
+		return events.DeliveryPending
+	case {{ .Succeeded }}:
+		return events.DeliverySucceeded
+	case {{ .Failed }}:
+		return events.DeliveryFailed
+	}
+	return 0
+}
+
+func eventDelivery(m *{{ .DeliveryPB }}) events.Delivery {
+	return events.Delivery{
+		Name:      m.GetName(),
+		Webhook:   events.WebhookOf(m.GetName()),
+		EventID:   m.{{ (index $d "event_id").Get }},
+		EventType: m.{{ (index $d "event_type").Get }},
+		Subject:   m.{{ (index $d "subject").Get }},
+		Payload:   m.{{ (index $d "payload").Get }},
+		State:     eventDeliveryState(m),
+		AttemptCount: m.{{ (index $d "attempt_count").Get }},
+{{- with index $d "response_code" }}
+		ResponseCode: m.{{ .Get }},
+{{- end }}
+{{- with index $d "error_message" }}
+		ErrorMessage: m.{{ .Get }},
+{{- end }}
+		NextAttemptTime: servicex.Time(m.{{ (index $d "next_attempt_time").Get }}),
+{{- with index $d "deliver_time" }}
+		DeliverTime: servicex.Time(m.{{ .Get }}),
+{{- end }}
+{{- with index $d "create_time" }}
+		CreateTime: servicex.Time(m.{{ .Get }}),
+{{- end }}
+		Etag: m.{{ (index $d "etag").Get }},
+	}
+}
+
+// storedDelivery is d as the stored record, with every field d carries.
+func storedDelivery(d events.Delivery) *{{ .DeliveryPB }} {
+	m := &{{ .DeliveryPB }}{
+		Name: d.Name,
+		{{ (index $d "event_id").GoName }}: d.EventID,
+		{{ (index $d "event_type").GoName }}: d.EventType,
+		{{ (index $d "subject").GoName }}: d.Subject,
+		{{ (index $d "payload").GoName }}: d.Payload,
+		{{ (index $d "attempt_count").GoName }}: d.AttemptCount,
+{{- with index $d "response_code" }}
+		{{ .GoName }}: d.ResponseCode,
+{{- end }}
+{{- with index $d "error_message" }}
+		{{ .GoName }}: d.ErrorMessage,
+{{- end }}
+		{{ (index $d "next_attempt_time").GoName }}: servicex.Timestamp(d.NextAttemptTime),
+{{- with index $d "deliver_time" }}
+		{{ .GoName }}: servicex.Timestamp(d.DeliverTime),
+{{- end }}
+		{{ (index $d "etag").GoName }}: d.Etag,
+	}
+	switch d.State {
+	case events.DeliveryPending:
+		m.{{ (index $d "state").GoName }} = {{ .Pending }}
+	case events.DeliverySucceeded:
+		m.{{ (index $d "state").GoName }} = {{ .Succeeded }}
+	case events.DeliveryFailed:
+		m.{{ (index $d "state").GoName }} = {{ .Failed }}
+	}
+	return m
+}
+
+// CreateDelivery implements events.Store.
+func (s *EventStore) CreateDelivery(ctx context.Context, d events.Delivery) error {
+	m := storedDelivery(d)
+	m.{{ (index $d "etag").GoName }} = ""
+	webhook := d.Webhook
+	if webhook == "" {
+		webhook = events.WebhookOf(d.Name)
+	}
+	_, err := s.Deliveries.Create(ctx, webhook, m)
+	return servicex.StoreErr(err, nil, events.ErrAlreadyExists, nil)
+}
+
+// DueDeliveries implements events.Store.
+func (s *EventStore) DueDeliveries(ctx context.Context, now time.Time, limit int) ([]events.Delivery, error) {
+	page, _, err := s.Deliveries.List(ctx, {{ quote .WebhookWildcard }}, repox.ListInput{
+		PageSize: int32(limit),
+		OrderBy:  {{ quote (index $d "next_attempt_time").Proto }},
+		Filter:   fmt.Sprintf("{{ (index $d "state").Proto }} = {{ .PendingLit }} AND {{ (index $d "next_attempt_time").Proto }} <= %q", now.UTC().Format(time.RFC3339Nano)),
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]events.Delivery, 0, len(page))
+	for _, m := range page {
+		out = append(out, eventDelivery(m))
+	}
+	return out, nil
+}
+
+// deliveryPaths maps the events.Path* names to the record's fields, server
+// owned (written by UpdateOutputOnly) or not.
+var deliveryPaths = map[string]struct {
+	field      string
+	outputOnly bool
+}{
+	events.PathState:           { {{- quote (index $d "state").Proto }}, {{ (index $d "state").OutputOnly -}} },
+	events.PathAttemptCount:    { {{- quote (index $d "attempt_count").Proto }}, {{ (index $d "attempt_count").OutputOnly -}} },
+	events.PathNextAttemptTime: { {{- quote (index $d "next_attempt_time").Proto }}, {{ (index $d "next_attempt_time").OutputOnly -}} },
+{{- with index $d "response_code" }}
+	events.PathResponseCode: { {{- quote .Proto }}, {{ .OutputOnly -}} },
+{{- end }}
+{{- with index $d "error_message" }}
+	events.PathErrorMessage: { {{- quote .Proto }}, {{ .OutputOnly -}} },
+{{- end }}
+{{- with index $d "deliver_time" }}
+	events.PathDeliverTime: { {{- quote .Proto }}, {{ .OutputOnly -}} },
+{{- end }}
+}
+
+// UpdateDelivery implements events.Store: the paths are written in one
+// etag-guarded write.
+func (s *EventStore) UpdateDelivery(ctx context.Context, d events.Delivery, paths []string) (events.Delivery, error) {
+	var mutable, output []string
+	for _, p := range paths {
+		f, ok := deliveryPaths[p]
+		switch {
+		case !ok:
+			continue
+		case f.outputOnly:
+			output = append(output, f.field)
+		default:
+			mutable = append(mutable, f.field)
+		}
+	}
+	var (
+		m   *{{ .DeliveryPB }}
+		err error
+	)
+	switch {
+	case len(mutable) == 0 && len(output) == 0:
+		return d, nil
+	case len(mutable) == 0:
+		m, err = s.Deliveries.UpdateOutputOnly(ctx, storedDelivery(d), output)
+	default:
+		m, err = s.Deliveries.UpdateWithOutputOnly(ctx, storedDelivery(d), mutable, output)
+	}
+	if err != nil {
+		return events.Delivery{}, servicex.StoreErr(err, nil, nil, events.ErrConflict)
+	}
+	return eventDelivery(m), nil
+}
+
+// PruneDeliveries implements events.Store.
+func (s *EventStore) PruneDeliveries(ctx context.Context, before time.Time, limit int) error {
+	page, _, err := s.Deliveries.List(ctx, {{ quote .WebhookWildcard }}, repox.ListInput{
+		PageSize: int32(limit),
+		Filter: fmt.Sprintf("({{ (index $d "state").Proto }} = {{ .SucceededLit }} OR {{ (index $d "state").Proto }} = {{ .FailedLit }}) AND update_time < %q",
+			before.UTC().Format(time.RFC3339Nano)),
+	})
+	if err != nil {
+		return err
+	}
+	for _, m := range page {
+		if err := s.Deliveries.{{ $e.DeliveryRemove }}(ctx, m.GetName()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+{{ end }}
+{{- with .Idem }}{{ $k := .F }}
+// IdempotencyStore is runtime-go's idempotency.Store over the generated
+// idempotency key repository.
+type IdempotencyStore struct {
+	Keys {{ .Repo }}
+}
+
+var _ idempotency.Store = (*IdempotencyStore)(nil)
+
+// Create implements idempotency.Store.
+func (s *IdempotencyStore) Create(ctx context.Context, k idempotency.Key) error {
+	_, err := s.Keys.Create(ctx, &{{ .PB }}{
+		Name: k.Name,
+		{{ (index $k "method").GoName }}: k.Method,
+		{{ (index $k "request_id").GoName }}: k.RequestID,
+		{{ (index $k "state").GoName }}: {{ .InFlight }},
+	})
+	return err
+}
+
+// Get implements idempotency.Store.
+func (s *IdempotencyStore) Get(ctx context.Context, name string) (idempotency.Key, error) {
+	m, err := s.Keys.Get(ctx, name)
+	if err != nil {
+		return idempotency.Key{}, servicex.StoreErr(err, idempotency.ErrNotFound, nil, nil)
+	}
+	k := idempotency.Key{
+		Name:      m.GetName(),
+		Method:    m.{{ (index $k "method").Get }},
+		RequestID: m.{{ (index $k "request_id").Get }},
+		State:     idempotency.InFlight,
+		Response:  m.{{ (index $k "response").Get }},
+{{- with index $k "create_time" }}
+		CreateTime: servicex.Time(m.{{ .Get }}),
+{{- end }}
+	}
+	if m.{{ (index $k "state").Get }} == {{ .Done }} {
+		k.State = idempotency.Done
+	}
+	return k, nil
+}
+
+// Settle implements idempotency.Store.
+func (s *IdempotencyStore) Settle(ctx context.Context, k idempotency.Key) error {
+	m := &{{ .PB }}{Name: k.Name, {{ (index $k "response").GoName }}: k.Response, {{ (index $k "state").GoName }}: {{ .InFlight }}}
+	if k.State == idempotency.Done {
+		m.{{ (index $k "state").GoName }} = {{ .Done }}
+	}
+	var mutable, output []string
+{{- range $conv, $f := $k }}{{ if or (eq $conv "state") (eq $conv "response") }}
+	{{ if $f.OutputOnly }}output{{ else }}mutable{{ end }} = append({{ if $f.OutputOnly }}output{{ else }}mutable{{ end }}, {{ quote $f.Proto }})
+{{- end }}{{ end }}
+	var err error
+	if len(mutable) == 0 {
+		_, err = s.Keys.UpdateOutputOnly(ctx, m, output)
+	} else {
+		_, err = s.Keys.UpdateWithOutputOnly(ctx, m, mutable, output)
+	}
+	return err
+}
+
+// Delete implements idempotency.Store: the key goes for good, so the request
+// id can be claimed again.
+func (s *IdempotencyStore) Delete(ctx context.Context, name string) error {
+	return s.Keys.{{ .Remove }}(ctx, name)
+}
+{{ end }}
