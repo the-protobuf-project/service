@@ -19,7 +19,6 @@ import (
 	"example.com/gen/repository/v1/bookingacmeexample"
 	"example.com/gen/service/servicex"
 	"example.com/test/gen"
-	"google.golang.org/protobuf/proto"
 )
 
 // ReservationsRepositories are the generated repositories ReservationsServer
@@ -112,7 +111,7 @@ const reservationsReservationType = "booking.acme.example/Reservation"
 var (
 	reservationsReservationCollections = []string{"organizationalUnits", "reservations"}
 	reservationsReservationParent      = []string{"organizationalUnits"}
-	reservationsReservationRequired    = nil
+	reservationsReservationRequired    = []string(nil)
 	reservationsReservationOutputOnly  = []string{"create_time", "update_time", "etag", "delete_time", "purge_time"}
 	reservationsReservationImmutable   = []string{"hold"}
 )

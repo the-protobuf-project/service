@@ -161,14 +161,14 @@ type Segment struct {
 
 // Events are a resource's event declarations.
 type Events struct {
-	Prefix    string      // "freebusy.reservation.v1.reservation"
-	ID        string      // the feed's cursor id
-	ScopeVar  string      // (service.v1.event).scope
+	Prefix   string // "freebusy.reservation.v1.reservation"
+	ID       string // the feed's cursor id
+	ScopeVar string // (service.v1.event).scope
 	// ScopeCollection is the collection of ScopeVar's segment, "" for none.
 	ScopeCollection string
 	// Feed is set when the resource can be read as a change feed: it has an
 	// update_time and an etag, and Feed is its read mask.
-	Feed []string
+	Feed      []string
 	Lifecycle []Lifecycle // the lifecycle events not omitted
 	// State is the enum field the state events read, and States the values
 	// that declare one. Both empty when no value of the resource's state enum
@@ -201,9 +201,9 @@ type Method struct {
 
 	// The request fields a standard method reads; nil when absent.
 	Name, Parent, Body, ID, UpdateMask, Etag *protogen.Field
-	AllowMissing, ValidateOnly, Force       *protogen.Field
-	PageSize, PageToken, Filter, OrderBy    *protogen.Field
-	ShowDeleted, ReadMask                   *protogen.Field
+	AllowMissing, ValidateOnly, Force        *protogen.Field
+	PageSize, PageToken, Filter, OrderBy     *protogen.Field
+	ShowDeleted, ReadMask                    *protogen.Field
 
 	// List's response fields.
 	Items, NextPageToken *protogen.Field

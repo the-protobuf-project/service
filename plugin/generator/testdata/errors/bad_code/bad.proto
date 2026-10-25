@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package bad.v1;
+
+import "service/v1/annotations.proto";
+
+option go_package = "example.com/bad/v1;badv1";
+
+// Reasons with a code google.rpc.Code does not have.
+enum ErrorReason {
+  option (service.v1.error_domain) = {domain: "bad.example"};
+  // Unset.
+  ERROR_REASON_UNSPECIFIED = 0;
+  // Not a code.
+  ERROR_REASON_ODD = 1 [(service.v1.error_reason) = {code: "TEAPOT"}];
+}

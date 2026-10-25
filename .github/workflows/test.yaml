@@ -1,0 +1,162 @@
+name: Test
+
+# The plugin's own tests (golden, determinism, IR agreement with
+# protoc-gen-store, refusals), the examples module against PostgreSQL, a
+# regeneration check that the committed examples are what the plugins produce,
+# and the release build matrix.
+#
+# The examples import runtime-go's events module and grpc/problem,
+# grpc/idempotency packages. Until those are on runtime-go's main branch and
+# pinned in examples/go.mod, the examples jobs check out runtime-go beside
+# this repository and build in a workspace that uses it (RUNTIME_GO_REF).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  STORE_VERSION: v1.6.3
+  BUF_VERSION: 1.72.0
+  RUNTIME_GO_REF: main
+
+jobs:
+  test:
+    name: Test (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test
+        run: go test -race ./...
+
+  standalone:
+    name: Modules build standalone
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Root module, no workspace
+        env:
+          GOWORK: off
+        run: go build ./... && go vet ./... && go test ./...
+
+  integration:
+    name: Integration (Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: svc
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          path: service
+      - name: Checkout runtime-go
+        uses: actions/checkout@v7
+        with:
+          repository: the-protobuf-project/runtime-go
+          ref: ${{ env.RUNTIME_GO_REF }}
+          path: runtime-go
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: service/go.mod
+          cache: true
+          cache-dependency-path: service/examples/go.sum
+      - name: Workspace over runtime-go
+        run: |
+          {
+            echo "go 1.26.8"
+            echo "use ("
+            echo "	./service"
+            echo "	./service/examples"
+            for m in agents buffers cache database events grpc interfaces network observability rfc streams telemetry ulid; do
+              echo "	./runtime-go/$m"
+            done
+            echo ")"
+            for m in events grpc network; do
+              echo "replace github.com/the-protobuf-project/runtime-go/$m v0.0.0-00010101000000-000000000000 => ./runtime-go/$m"
+            done
+          } > go.work
+      - name: Vet and test the examples against PostgreSQL
+        working-directory: service/examples
+        env:
+          GOWORK: ${{ github.workspace }}/go.work
+          SERVICE_TEST_DSN: host=localhost port=5432 user=postgres password=postgres dbname=svc sslmode=disable
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
+
+  reproduce:
+    name: Examples reproduce
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: ${{ env.BUF_VERSION }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install the plugins
+        run: |
+          go install "github.com/the-protobuf-project/store/plugin/cmd/protoc-gen-store@${STORE_VERSION}"
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+          go install github.com/the-protobuf-project/mcp/plugin/cmd/protoc-gen-mcp@v1.7.5
+          go build -o bin/protoc-gen-service ./plugin/cmd/protoc-gen-service
+      - name: Committed examples are current
+        run: |
+          PATH="$PWD/bin:$PATH" buf generate --template buf.gen.example.yaml
+          git diff --exit-code -- examples/generated/ \
+            || (echo "::error::examples/generated is stale — run: buf generate --template buf.gen.example.yaml, then commit" && exit 1)
+
+  build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build binary
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -ldflags "-s -w" -o /dev/null ./plugin/cmd/protoc-gen-service

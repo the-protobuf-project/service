@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package bad.v1;
+
+import "service/v1/annotations.proto";
+
+option go_package = "example.com/bad/v1;badv1";
+
+// Reasons without a domain.
+enum ErrorReason {
+  option (service.v1.error_domain) = {};
+  // Unset.
+  ERROR_REASON_UNSPECIFIED = 0;
+}

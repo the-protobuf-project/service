@@ -187,7 +187,7 @@ func (b *builder) adapter(m *protogen.Message, ao *servicepbv1.AdapterOptions) (
 			}
 		}
 		for _, want := range role.states {
-			if a.States[want] == nil && !(role.name == "Webhook") {
+			if a.States[want] == nil && role.name != "Webhook" {
 				return nil, fmt.Errorf("service: %s: role %s reads state %s, and %s has no value ending in _%s", m.Desc.FullName(), ao.GetRole(), want, st.Enum.Desc.FullName(), want)
 			}
 		}

@@ -19,8 +19,8 @@
 # Golden fixtures: case inputs and expected output trees.
 #
 # The pattern is repo-relative and has no leading directory: this file lives at
-# the root of the cache repository, so "target/..." is right and
-# "cache/target/..." silently matches nothing. Verify a change here with
+# the root of the service repository, so "target/..." is right and
+# "service/target/..." silently matches nothing. Verify a change here with
 # `git check-attr text eol -- <a golden file>` rather than by eye — a pattern
 # that matches nothing looks exactly like one that works until a CRLF checkout
 # breaks every byte comparison at once.

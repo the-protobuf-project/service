@@ -1,0 +1,140 @@
+version: 2
+project_name: protoc-gen-service
+
+before:
+  hooks:
+    - go mod tidy
+    # The root module's tests only. examples/ is a separate module whose tests
+    # exercise generated code against a fake driver, and the Redis integration
+    # lives in test.yaml where a service container exists. The release gate is
+    # that the generator builds and its golden, agreement and refusal tests pass;
+    # a tag is only ever cut from a commit that already passed the full matrix.
+    - go test ./...
+
+builds:
+  # One binary. Unlike its sibling repositories there is no second entry point:
+  # this plugin generates code and drives no toolchain, so there is nothing for a
+  # CLI to do that `buf generate` does not.
+  - id: protoc-gen-service
+    binary: protoc-gen-service
+    main: ./plugin/cmd/protoc-gen-service
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      # main.version is read by resolveVersion() and stamped into every generated
+      # file's banner, alongside the entity and protokit versions resolved from
+      # build info. A release binary that reported "dev" would put "dev" in the
+      # provenance line of every file it wrote.
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: protoc-gen-service-archive
+    ids: [protoc-gen-service]
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}amd64
+      {{- else if eq .Arch "arm64" }}arm64
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE
+      - README.md
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-next'
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug Fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Performance Improvements'
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - typo
+
+# Homebrew cask, generated and committed to the tap on each release. The url and
+# sha256 for every platform are filled in from the archives above, so there is no
+# checksum to hand-maintain.
+homebrew_casks:
+  - name: protoc-gen-service
+    repository:
+      owner: the-protobuf-project
+      name: homebrew-tap
+      token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
+    directory: Casks
+    homepage: 'https://github.com/the-protobuf-project/service'
+    description: 'Generate AIP standard-method gRPC servers, change feeds and error reasons over protoc-gen-store repositories'
+    ids:
+      - protoc-gen-service-archive
+    binaries:
+      - protoc-gen-service
+    # Homebrew deprecated `postflight`; GoReleaser hooks can only emit that,
+    # so the install steps go in a custom block instead.
+    custom_block: |
+      postflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "protoc-gen-service"], chdir: "."
+        end
+      end
+
+release:
+  github:
+    owner: the-protobuf-project
+    name: service
+  draft: false
+  prerelease: auto
+  name_template: 'v{{.Version}}'
+  header: |
+    `protoc-gen-service` generates the AIP standard-method service layer
+    (AIP-131..135, AIP-164) over [protoc-gen-store]'s generated repositories:
+    a gRPC server per service with a hooks interface for business logic, the
+    registration of every server, gateway and MCP binding with runtime-go's
+    HybridServer, change feeds and store adapters for runtime-go's events and
+    idempotency packages, and error reasons declared in proto (AIP-193).
+
+    ```bash
+    brew install the-protobuf-project/tap/protoc-gen-service
+    ```
+
+    ```bash
+    go install github.com/the-protobuf-project/service/plugin/cmd/protoc-gen-service@v{{.Version}}
+    ```
+
+    It runs after protoc-gen-store's repository target, with
+    `strategy: all`; `repository_module` is that target's `go_module`:
+
+    ```yaml
+    plugins:
+      - local: protoc-gen-service
+        out: gen/service
+        strategy: all
+        opt:
+          - go_module=github.com/me/gen/service
+          - repository_module=github.com/me/gen/repository
+          - config=store.yaml
+    ```
+
+    [protoc-gen-store]: https://github.com/the-protobuf-project/store

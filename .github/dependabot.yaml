@@ -1,0 +1,76 @@
+# Dependabot: automated dependency updates
+# https://docs.github.com/en/code-security/dependabot
+#
+# Pull requests opened from here are merged automatically once every check on the
+# commit has passed — see .github/workflows/dependabot-auto-merge.yaml and
+# .github/AUTOMATION.md. Nothing else needs configuring for that to work.
+
+version: 2
+updates:
+  # The plugin: the generator, the service.v1 stubs, and the reader.
+  - package-ecosystem: 'gomod'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'go'
+    groups:
+      # Grouped so one weekly PR carries the routine bumps rather than five that
+      # each run the full matrix. Majors are deliberately excluded and arrive as
+      # individual PRs: they are the ones most likely to change generated output,
+      # and a group diff is the wrong place to notice that.
+      #
+      # protokit is excluded at every update type, not just major. It is the IR
+      # engine that decides every database, schema, table and column name, so a
+      # *minor* bump of it can move generated output while nothing else in the
+      # group can. It has already arrived once inside a group (v1.2.1 → v1.3.1,
+      # PR #1) and been merged before anyone looked at what it did to the
+      # committed tree — which turned out to be nothing, by inspection after the
+      # fact rather than by anything that would have blocked it.
+      #
+      # There is a second reason, and it is the one no test covers: protoc-gen-store
+      # ships built against its own protokit, so moving this plugin's alone puts
+      # the two binaries a user installs on different engines. See
+      # docs/boundary-findings.md, finding 10.
+      go-minor-and-patch:
+        patterns: ['*']
+        exclude-patterns:
+          - 'github.com/the-protobuf-project/protokit'
+        update-types: ['minor', 'patch']
+
+  # examples/ is a module of its own and is not reachable from the root's
+  # dependency graph, so it needs its own entry or its dependencies — runtime-go,
+  # gorm, grpc-gateway — would never be updated. It is also the only module here
+  # that depends on runtime-go, which is untagged: expect pseudo-version bumps
+  # rather than releases.
+  - package-ecosystem: 'gomod'
+    directory: '/examples'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'go'
+      - 'examples'
+    groups:
+      examples-minor-and-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'ci'
+    groups:
+      actions:
+        patterns: ['*']
+        update-types: ['minor', 'patch']

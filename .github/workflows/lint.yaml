@@ -1,0 +1,83 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  BUF_VERSION: 1.72.0
+
+jobs:
+  go:
+    name: Lint (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l plugin examples/integration)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::unformatted files (run: gofmt -w plugin examples/integration)"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: go vet
+        run: go vet ./...
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+
+  proto:
+    name: Lint (Proto)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: ${{ env.BUF_VERSION }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: buf build
+        run: buf build
+      - name: buf lint
+        run: buf lint
+      - name: buf format
+        run: buf format --diff --exit-code
+      - name: Generated stubs up to date
+        run: |
+          buf generate
+          git diff --exit-code -- plugin/pb/ \
+            || (echo "::error::generated stubs are stale — run 'buf generate' and commit" && exit 1)
+
+  aip:
+    name: Lint (AIP)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: ${{ env.BUF_VERSION }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install api-linter
+        run: go install github.com/googleapis/api-linter/cmd/api-linter@latest
+      - name: api-linter
+        run: ./scripts/aip.sh

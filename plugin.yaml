@@ -1,0 +1,27 @@
+# What protoc-gen-service is, declared for anything that composes plugins.
+# protokit's manifest package parses and validates this file.
+
+# The vocabulary this plugin owns.
+provides: service
+
+# The generated servers persist through protoc-gen-store's repositories, so a
+# run without the store's repository target produces servers importing
+# packages that do not exist.
+requires:
+  - store
+
+annotations:
+  buf.build/the-protobuf-project/service: '^0'
+  buf.build/the-protobuf-project/entity: '^1'
+
+runtime:
+  go: '>=1.26'
+
+facets:
+  # service.v1 is this plugin's own; entity.v1 is structure, not a facet.
+  reads: []
+  optional_reads: []
+
+outputs:
+  - '**/*.go'
+  - '**/*.md'

@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package bad.v1;
+
+import "google/api/resource.proto";
+import "service/v1/annotations.proto";
+
+option go_package = "example.com/bad/v1;badv1";
+
+// A cursor whose fields entry names a field it does not have.
+message FeedCursor {
+  option (google.api.resource) = {
+    type: "bad.example/FeedCursor"
+    pattern: "feedCursors/{feed_cursor}"
+  };
+  option (service.v1.adapter) = {
+    role: ROLE_FEED_CURSOR
+    fields: [
+      {
+        key: "position"
+        value: "nowhere"
+      }
+    ]
+  };
+  // The resource name.
+  string name = 1;
+  // The concurrency token.
+  string etag = 2;
+}

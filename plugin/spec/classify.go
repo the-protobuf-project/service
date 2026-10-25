@@ -208,4 +208,3 @@ func int32Field(m *protogen.Message, name string) *protogen.Field {
 	}
 	return nil
 }
-

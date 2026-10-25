@@ -1,21 +1,20 @@
 #!/usr/bin/env bash
 # Run the Google API linter over every proto this repository owns.
 #
-# There is no configuration file and no disabled rule. protoc-gen-cache reads
-# google.api.resource to derive a namespace, and refuses outright when a resource
-# pattern nests under a parent nothing binds — so it holds its users to AIP, and
-# a vocabulary that did not itself pass the linter would be ducking the bar it
-# sets. The examples are held to the same standard because they are what a reader
-# copies.
+# There is no configuration file and no disabled rule. protoc-gen-service
+# recognizes the AIP standard methods by their shapes, so it holds its users to
+# AIP, and a vocabulary that did not itself pass the linter would be ducking the
+# bar it sets. The examples are held to the same standard because they are what
+# a reader copies.
 #
 # api-linter reads a FileDescriptorSet rather than resolving imports itself, so
 # buf builds one per module first.
 #
 # plugin/generator/testdata is deliberately not linted here, and it is worth
 # saying why rather than leaving it to look like an oversight. Those fixtures are
-# organised by *test case* — errors/unbound_parent, cases/warnings — so their
-# directories do not mirror their proto packages, and two cases legitimately share
-# the package tenancy.v1 because they are separate cases. That trips
+# organised by *test case* — errors/bad_code, cases/purge — so their directories
+# do not mirror their proto packages, and the cases carry shapes AIP forbids on
+# purpose (a single-resource Purge, a singleton) to prove they stay custom. That trips
 # core::0191::proto-package and buf'"'"'s own PACKAGE_DIRECTORY_MATCH, neither of
 # which is telling us anything true: the layout is right for what those files are.
 #

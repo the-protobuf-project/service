@@ -109,5 +109,4 @@ func must[T any](v T, err error) T {
 	return v
 }
 
-
 func statusOf(err error) (*status.Status, bool) { return status.FromError(err) }

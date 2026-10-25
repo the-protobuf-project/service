@@ -155,10 +155,10 @@ type methodView struct {
 	R      *resourceView
 	// Getters, "" when the request lacks the field.
 	Name, Parent, Body, BodyField, ID, IDField, UpdateMask, Etag, AllowMissing, ValidateOnly, Force string
-	PageSize, PageToken, Filter, OrderBy, ShowDeleted, ReadMask                                  string
-	Items, Next                                                                                  string
-	ReturnsEmpty                                                                                 bool
-	HasCreate                                                                                    bool // the service also creates this resource (allow_missing)
+	PageSize, PageToken, Filter, OrderBy, ShowDeleted, ReadMask                                     string
+	Items, Next                                                                                     string
+	ReturnsEmpty                                                                                    bool
+	HasCreate                                                                                       bool // the service also creates this resource (allow_missing)
 }
 
 func goList(xs []string) string {
@@ -186,36 +186,36 @@ func serviceFileView(pkg *spec.Package, svc *spec.Service, servicex, _ string) (
 	im.std("context")
 	im.use(servicex, "servicex")
 	v := &serviceView{
-		GoName:      svc.GoName,
-		FullName:    svc.FullName,
-		Grpc:        im.use(svc.Grpc.Path, svc.Grpc.Name),
-		Domain:      svc.Domain,
+		GoName:   svc.GoName,
+		FullName: svc.FullName,
+		Grpc:     im.use(svc.Grpc.Path, svc.Grpc.Name),
+		Domain:   svc.Domain,
 	}
 	rv := map[*spec.Resource]*resourceView{}
 	for _, r := range svc.Resources {
 		x := &resourceView{
-			GoName:      r.Message.GoIdent.GoName,
-			PB:          im.qualify(r.Message),
-			Field:       naming.PascalGo(naming.Pluralize(naming.SnakeCase(r.Message.GoIdent.GoName))),
-			Repo:        im.use(r.Repository.Path, r.Repository.Name) + "." + r.RepoInterface,
-			Type:        r.Type,
-			Singular:    r.Singular,
-			Var:         naming.CamelFirst(svc.GoName) + r.Message.GoIdent.GoName,
-			Collection:  r.Collection(),
-			Collections: goList(r.Collections()),
-			Parent:      goList(r.ParentCollections()),
-			Parented:    r.Parented,
-			HasEtag:     r.HasEtag,
-			Required:    goList(r.Required),
-			OutputOnly:  goList(r.OutputOnly),
-			Immutable:   goList(r.Immutable),
-			HasImmut:    len(r.Immutable) > 0,
-			Remove:      map[bool]string{true: "Purge", false: "Delete"}[r.SoftDelete],
-			HookCreate:  svc.Has(r, spec.Create),
-			HookUpdate:  svc.Has(r, spec.Update),
-			HookDelete:  svc.Has(r, spec.Delete),
+			GoName:       r.Message.GoIdent.GoName,
+			PB:           im.qualify(r.Message),
+			Field:        naming.PascalGo(naming.Pluralize(naming.SnakeCase(r.Message.GoIdent.GoName))),
+			Repo:         im.use(r.Repository.Path, r.Repository.Name) + "." + r.RepoInterface,
+			Type:         r.Type,
+			Singular:     r.Singular,
+			Var:          naming.CamelFirst(svc.GoName) + r.Message.GoIdent.GoName,
+			Collection:   r.Collection(),
+			Collections:  goList(r.Collections()),
+			Parent:       goList(r.ParentCollections()),
+			Parented:     r.Parented,
+			HasEtag:      r.HasEtag,
+			Required:     goList(r.Required),
+			OutputOnly:   goList(r.OutputOnly),
+			Immutable:    goList(r.Immutable),
+			HasImmut:     len(r.Immutable) > 0,
+			Remove:       map[bool]string{true: "Purge", false: "Delete"}[r.SoftDelete],
+			HookCreate:   svc.Has(r, spec.Create),
+			HookUpdate:   svc.Has(r, spec.Update),
+			HookDelete:   svc.Has(r, spec.Delete),
 			HookUndelete: svc.Has(r, spec.Undelete),
-			HookParent:  r.Parented && (svc.Has(r, spec.Create) || svc.Has(r, spec.List)),
+			HookParent:   r.Parented && (svc.Has(r, spec.Create) || svc.Has(r, spec.List)),
 		}
 		if svc.Has(r, spec.Update) {
 			for _, m := range svc.Methods {
@@ -286,7 +286,6 @@ func serviceFileView(pkg *spec.Package, svc *spec.Service, servicex, _ string) (
 	}
 	return &serverFile{Package: pkg.GoPackage, Imports: lines, S: v}, nil
 }
-
 
 // hooks are the hook methods r's generated methods call, in a stable order.
 func hooks(r *resourceView, im *imports) []hookView {

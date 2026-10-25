@@ -2,15 +2,15 @@
 // versions:
 // 	protoc-gen-service test
 // 	protoc (unknown)
-// source: booking.proto
+// source: webhook.proto
 //
-// runtime-go store adapters over package acme.booking.v1's repositories.
+// runtime-go store adapters over package acme.webhook.v1's repositories.
 // annotations: entity.v1 test, service.v1 test
 // engine:      protokit test
 //
 // service — https://github.com/the-protobuf-project/service
 
-package bookingv1svc
+package webhookv1svc
 
 import (
 	"context"
@@ -18,20 +18,19 @@ import (
 	"time"
 
 	"example.com/gen/repository/repox"
-	"example.com/gen/repository/v1/bookingacmeexample"
+	"example.com/gen/repository/v1/webhookacmeexample"
 	"example.com/gen/service/servicex"
 	"example.com/test/gen"
 	"github.com/the-protobuf-project/runtime-go/events"
-	"github.com/the-protobuf-project/runtime-go/grpc/idempotency"
 )
 
 // EventStore is runtime-go's events.Store over the generated webhook,
 // delivery and feed cursor repositories, on either backend they were opened
 // on.
 type EventStore struct {
-	Webhooks   bookingacmeexample.WebhookRepository
-	Deliveries bookingacmeexample.DeliveryRepository
-	Cursors    bookingacmeexample.FeedCursorRepository
+	Webhooks   webhookacmeexample.WebhookRepository
+	Deliveries webhookacmeexample.DeliveryRepository
+	Cursors    webhookacmeexample.FeedCursorRepository
 	// PageSize is the page ListWebhooks reads; 0 is 100.
 	PageSize int32
 }
@@ -39,13 +38,13 @@ type EventStore struct {
 var _ events.Store = (*EventStore)(nil)
 
 // eventWebhook is the events view of a stored webhook.
-func eventWebhook(m *bookingv1.Webhook) events.Webhook {
+func eventWebhook(m *webhookv1.Webhook) events.Webhook {
 	return events.Webhook{
 		Name:       m.GetName(),
 		URI:        m.GetUri(),
 		EventTypes: m.GetEventTypes(),
 		Scope:      m.GetOrganizationalUnit(),
-		Paused:     m.GetState() == bookingv1.Webhook_STATE_PAUSED,
+		Paused:     m.GetPaused(),
 		Secret:     m.GetSecret(),
 		CreateTime: servicex.Time(m.GetCreateTime()),
 	}
@@ -80,7 +79,7 @@ func (s *EventStore) GetWebhook(ctx context.Context, name string) (events.Webhoo
 // cursorName is where feed's cursor is stored.
 func cursorName(feed string) string { return "feedCursors" + "/" + feed }
 
-func eventCursor(feed string, m *bookingv1.FeedCursor) events.Cursor {
+func eventCursor(feed string, m *webhookv1.FeedCursor) events.Cursor {
 	return events.Cursor{Feed: feed, Position: servicex.Time(m.GetPositionTime()), Etag: m.GetEtag()}
 }
 
@@ -95,7 +94,7 @@ func (s *EventStore) GetCursor(ctx context.Context, feed string) (events.Cursor,
 
 // CreateCursor implements events.Store.
 func (s *EventStore) CreateCursor(ctx context.Context, c events.Cursor) (events.Cursor, error) {
-	m, err := s.Cursors.Create(ctx, &bookingv1.FeedCursor{Name: cursorName(c.Feed), PositionTime: servicex.Timestamp(c.Position)})
+	m, err := s.Cursors.Create(ctx, &webhookv1.FeedCursor{Name: cursorName(c.Feed), PositionTime: servicex.Timestamp(c.Position)})
 	if err != nil {
 		return events.Cursor{}, servicex.StoreErr(err, nil, events.ErrAlreadyExists, nil)
 	}
@@ -104,24 +103,24 @@ func (s *EventStore) CreateCursor(ctx context.Context, c events.Cursor) (events.
 
 // UpdateCursor implements events.Store.
 func (s *EventStore) UpdateCursor(ctx context.Context, c events.Cursor) error {
-	m := &bookingv1.FeedCursor{Name: cursorName(c.Feed), PositionTime: servicex.Timestamp(c.Position), Etag: c.Etag}
+	m := &webhookv1.FeedCursor{Name: cursorName(c.Feed), PositionTime: servicex.Timestamp(c.Position), Etag: c.Etag}
 	_, err := s.Cursors.Update(ctx, m, []string{"position_time"})
 	return servicex.StoreErr(err, events.ErrNotFound, nil, events.ErrConflict)
 }
 
-func eventDeliveryState(m *bookingv1.Delivery) events.DeliveryState {
+func eventDeliveryState(m *webhookv1.Delivery) events.DeliveryState {
 	switch m.GetState() {
-	case bookingv1.Delivery_STATE_PENDING:
+	case webhookv1.Delivery_STATE_PENDING:
 		return events.DeliveryPending
-	case bookingv1.Delivery_STATE_SUCCEEDED:
+	case webhookv1.Delivery_STATE_SUCCEEDED:
 		return events.DeliverySucceeded
-	case bookingv1.Delivery_STATE_FAILED:
+	case webhookv1.Delivery_STATE_FAILED:
 		return events.DeliveryFailed
 	}
 	return 0
 }
 
-func eventDelivery(m *bookingv1.Delivery) events.Delivery {
+func eventDelivery(m *webhookv1.Delivery) events.Delivery {
 	return events.Delivery{
 		Name:            m.GetName(),
 		Webhook:         events.WebhookOf(m.GetName()),
@@ -141,8 +140,8 @@ func eventDelivery(m *bookingv1.Delivery) events.Delivery {
 }
 
 // storedDelivery is d as the stored record, with every field d carries.
-func storedDelivery(d events.Delivery) *bookingv1.Delivery {
-	m := &bookingv1.Delivery{
+func storedDelivery(d events.Delivery) *webhookv1.Delivery {
+	m := &webhookv1.Delivery{
 		Name:            d.Name,
 		EventId:         d.EventID,
 		EventType:       d.EventType,
@@ -157,11 +156,11 @@ func storedDelivery(d events.Delivery) *bookingv1.Delivery {
 	}
 	switch d.State {
 	case events.DeliveryPending:
-		m.State = bookingv1.Delivery_STATE_PENDING
+		m.State = webhookv1.Delivery_STATE_PENDING
 	case events.DeliverySucceeded:
-		m.State = bookingv1.Delivery_STATE_SUCCEEDED
+		m.State = webhookv1.Delivery_STATE_SUCCEEDED
 	case events.DeliveryFailed:
-		m.State = bookingv1.Delivery_STATE_FAILED
+		m.State = webhookv1.Delivery_STATE_FAILED
 	}
 	return m
 }
@@ -225,7 +224,7 @@ func (s *EventStore) UpdateDelivery(ctx context.Context, d events.Delivery, path
 		}
 	}
 	var (
-		m   *bookingv1.Delivery
+		m   *webhookv1.Delivery
 		err error
 	)
 	switch {
@@ -253,72 +252,9 @@ func (s *EventStore) PruneDeliveries(ctx context.Context, before time.Time, limi
 		return err
 	}
 	for _, m := range page {
-		if err := s.Deliveries.Purge(ctx, m.GetName()); err != nil {
+		if err := s.Deliveries.Delete(ctx, m.GetName()); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// IdempotencyStore is runtime-go's idempotency.Store over the generated
-// idempotency key repository.
-type IdempotencyStore struct {
-	Keys bookingacmeexample.IdempotencyKeyRepository
-}
-
-var _ idempotency.Store = (*IdempotencyStore)(nil)
-
-// Create implements idempotency.Store.
-func (s *IdempotencyStore) Create(ctx context.Context, k idempotency.Key) error {
-	_, err := s.Keys.Create(ctx, &bookingv1.IdempotencyKey{
-		Name:      k.Name,
-		Method:    k.Method,
-		RequestId: k.RequestID,
-		State:     bookingv1.IdempotencyKey_STATE_IN_FLIGHT,
-	})
-	return err
-}
-
-// Get implements idempotency.Store.
-func (s *IdempotencyStore) Get(ctx context.Context, name string) (idempotency.Key, error) {
-	m, err := s.Keys.Get(ctx, name)
-	if err != nil {
-		return idempotency.Key{}, servicex.StoreErr(err, idempotency.ErrNotFound, nil, nil)
-	}
-	k := idempotency.Key{
-		Name:       m.GetName(),
-		Method:     m.GetMethod(),
-		RequestID:  m.GetRequestId(),
-		State:      idempotency.InFlight,
-		Response:   m.GetResponse(),
-		CreateTime: servicex.Time(m.GetCreateTime()),
-	}
-	if m.GetState() == bookingv1.IdempotencyKey_STATE_DONE {
-		k.State = idempotency.Done
-	}
-	return k, nil
-}
-
-// Settle implements idempotency.Store.
-func (s *IdempotencyStore) Settle(ctx context.Context, k idempotency.Key) error {
-	m := &bookingv1.IdempotencyKey{Name: k.Name, Response: k.Response, State: bookingv1.IdempotencyKey_STATE_IN_FLIGHT}
-	if k.State == idempotency.Done {
-		m.State = bookingv1.IdempotencyKey_STATE_DONE
-	}
-	var mutable, output []string
-	mutable = append(mutable, "response")
-	output = append(output, "state")
-	var err error
-	if len(mutable) == 0 {
-		_, err = s.Keys.UpdateOutputOnly(ctx, m, output)
-	} else {
-		_, err = s.Keys.UpdateWithOutputOnly(ctx, m, mutable, output)
-	}
-	return err
-}
-
-// Delete implements idempotency.Store: the key goes for good, so the request
-// id can be claimed again.
-func (s *IdempotencyStore) Delete(ctx context.Context, name string) error {
-	return s.Keys.Purge(ctx, name)
 }
