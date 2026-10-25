@@ -84,7 +84,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: service/go.mod
+          # Not go.mod's version: the workspace below includes runtime-go's
+          # modules, which may need a newer 1.26 patch release.
+          go-version: '1.26.x'
+          check-latest: true
           cache: true
           cache-dependency-path: service/examples/go.sum
       - name: Workspace over runtime-go

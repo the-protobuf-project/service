@@ -12,7 +12,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"runtime/debug"
+	"strings"
 
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/types/pluginpb"
@@ -35,11 +37,18 @@ func resolveVersion() string {
 	if !ok {
 		return "dev"
 	}
-	if v := bi.Main.Version; v != "" && v != "(devel)" {
+	// A build from a checkout carries a VCS pseudo-version (and "+dirty" with
+	// local edits), which changes with every commit; stamping it would make
+	// generated output differ between identical builds. Only a tagged module
+	// version (go install ...@vX.Y.Z) is reported.
+	if v := bi.Main.Version; v != "" && v != "(devel)" && !pseudoVersion.MatchString(v) && !strings.Contains(v, "+dirty") {
 		return v
 	}
 	return "dev"
 }
+
+// pseudoVersion matches the timestamp-and-hash part of a Go pseudo-version.
+var pseudoVersion = regexp.MustCompile(`\d{14}-[0-9a-f]{12}`)
 
 func main() {
 	v := resolveVersion()
