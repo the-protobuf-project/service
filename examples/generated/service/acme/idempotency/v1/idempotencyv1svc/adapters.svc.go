@@ -5,8 +5,8 @@
 // source: acme/idempotency/v1/idempotency.proto
 //
 // runtime-go store adapters over package acme.idempotency.v1's repositories.
-// annotations: entity.v1 v1.6.3, service.v1 dev
-// engine:      protokit v1.3.4
+// annotations: entity.v1 v1.6.5, service.v1 dev
+// engine:      protokit v1.3.6
 //
 // service — https://github.com/the-protobuf-project/service
 

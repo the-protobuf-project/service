@@ -4,8 +4,8 @@
 // 	protoc (unknown)
 //
 // Shared runtime of the generated AIP standard-method servers.
-// annotations: entity.v1 v1.6.3, service.v1 dev
-// engine:      protokit v1.3.4
+// annotations: entity.v1 v1.6.5, service.v1 dev
+// engine:      protokit v1.3.6
 //
 // service — https://github.com/the-protobuf-project/service
 
