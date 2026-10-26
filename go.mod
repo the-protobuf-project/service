@@ -19,8 +19,8 @@ module github.com/the-protobuf-project/service
 go 1.26.5
 
 require (
-	github.com/the-protobuf-project/protokit v1.3.4
-	github.com/the-protobuf-project/store v1.6.3
+	github.com/the-protobuf-project/protokit v1.3.6
+	github.com/the-protobuf-project/store v1.6.5
 	google.golang.org/genproto/googleapis/api v0.0.0-20261019180522-ce908d29299b
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
