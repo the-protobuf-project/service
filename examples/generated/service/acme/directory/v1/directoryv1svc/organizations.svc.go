@@ -5,8 +5,8 @@
 // source: acme/directory/v1/directory.proto
 //
 // AIP standard-method server for acme.directory.v1.Organizations.
-// annotations: entity.v1 v1.6.5, service.v1 dev
-// engine:      protokit v1.3.6
+// annotations: entity.v1 v1.6.9, service.v1 dev
+// engine:      protokit v1.3.8
 //
 // service — https://github.com/the-protobuf-project/service
 

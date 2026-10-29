@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 env:
-  STORE_VERSION: v1.6.3
+  STORE_VERSION: v1.6.9
   BUF_VERSION: 1.72.0
   RUNTIME_GO_REF: main
 

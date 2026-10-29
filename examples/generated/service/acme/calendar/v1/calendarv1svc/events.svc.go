@@ -5,8 +5,8 @@
 // source: acme/calendar/v1/calendar.proto
 //
 // AIP standard-method server for acme.calendar.v1.Events.
-// annotations: entity.v1 v1.6.5, service.v1 dev
-// engine:      protokit v1.3.6
+// annotations: entity.v1 v1.6.9, service.v1 dev
+// engine:      protokit v1.3.8
 //
 // service — https://github.com/the-protobuf-project/service
 
