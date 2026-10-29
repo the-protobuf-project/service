@@ -29,9 +29,15 @@ import (
 // version is set by -ldflags "-X main.version=..." at release.
 var version = ""
 
+// resolveVersion returns the build version to stamp into generated files: a
+// release's ldflags, else a tagged module version, else "dev". Whichever
+// answers, a version is spelled as Go spells it, with a leading "v" (see
+// canonicalVersion): goreleaser's ldflags carry a bare "0.2.1", a `go
+// install` the module's "v0.2.1", and a banner must not flip between the two
+// with whoever regenerates.
 func resolveVersion() string {
 	if version != "" {
-		return version
+		return canonicalVersion(version)
 	}
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -42,9 +48,19 @@ func resolveVersion() string {
 	// generated output differ between identical builds. Only a tagged module
 	// version (go install ...@vX.Y.Z) is reported.
 	if v := bi.Main.Version; v != "" && v != "(devel)" && !pseudoVersion.MatchString(v) && !strings.Contains(v, "+dirty") {
-		return v
+		return canonicalVersion(v)
 	}
 	return "dev"
+}
+
+// canonicalVersion prefixes a numeric version with "v" ("0.2.1" -> "v0.2.1",
+// "0.2.1+dirty" -> "v0.2.1+dirty"), leaving one already prefixed, and a
+// non-numeric one ("dev"), as it is.
+func canonicalVersion(v string) string {
+	if v != "" && v[0] >= '0' && v[0] <= '9' {
+		return "v" + v
+	}
+	return v
 }
 
 // pseudoVersion matches the timestamp-and-hash part of a Go pseudo-version.
