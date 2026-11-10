@@ -161,7 +161,15 @@ Extension numbers 53000-53006.
 
 ## Rust services
 
-Select `lang=rust` on the same plugin to generate tonic service implementations:
+Select `lang=rust` on the same plugin to generate tonic service implementations.
+Install `rustfmt` (`rustup component add rustfmt`) on the generator's PATH.
+Generation formats and parses every Rust file using Rust 2024 style and an
+isolated configuration; missing rustfmt or invalid output fails generation.
+Use the same rustfmt version when checking reproducible generated fixtures.
+
+```sh
+go build -o bin/protoc-gen-service ./plugin/cmd/protoc-gen-service
+```
 
 ```yaml
 plugins:
@@ -180,8 +188,15 @@ Add `pub mod service;` to your crate. Rust generation does not require
 `go_package`, `go_module`, or `repository_module`. Both Rust module options
 shown above are their defaults; `error_domain` also applies to Rust.
 
-The output contains `mod.rs`, one `<proto.package>.svc.rs` per package, and
-`servicex.rs`. It includes standard CRUD and undelete/purge methods, async
+The output uses the proto package hierarchy (`acme/directory/v1/`), with
+`mod.rs` files exposing the same package-level API. Each service has its own
+file (`organizations.rs`); `feeds.rs`, `errors.rs`, and `adapters.rs` are emitted
+when needed. Shared behavior lives in `servicex/mod.rs`, `servicex/feeds.rs`, and
+`servicex/adapters.rs`. Every file carries the same provenance header as Go.
+When upgrading from the flat layout, remove the old generated `servicex.rs`
+and `<proto.package>.svc.rs` files before regenerating. The fixture update
+command performs this cleanup for `examples/rust`.
+It includes standard CRUD and undelete/purge methods, async
 repository and hook traits, custom method traits (including streaming), typed
 error constructors, change feeds, and event/idempotency record adapters.
 Construct a generated server with `servicex::Options` and a

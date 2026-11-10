@@ -71,15 +71,15 @@ impl<M: Message + Default + Clone> Memory<M> {
         }
     }
     fn time(&self, m: &mut DynamicMessage, f: &str) {
-        if let Some(fd) = m.descriptor().get_field_by_name(f) {
-            if let prost_reflect::Kind::Message(desc) = fd.kind() {
-                let t = prost_types::Timestamp {
-                    seconds: 100,
-                    nanos: 0,
-                };
-                let d = DynamicMessage::decode(desc, t.encode_to_vec().as_slice()).unwrap();
-                m.set_field_by_name(f, Value::Message(d));
-            }
+        if let Some(fd) = m.descriptor().get_field_by_name(f)
+            && let prost_reflect::Kind::Message(desc) = fd.kind()
+        {
+            let t = prost_types::Timestamp {
+                seconds: 100,
+                nanos: 0,
+            };
+            let d = DynamicMessage::decode(desc, t.encode_to_vec().as_slice()).unwrap();
+            m.set_field_by_name(f, Value::Message(d));
         }
     }
     fn update_fields(&self, value: M, paths: Vec<String>) -> Result<M, Status> {

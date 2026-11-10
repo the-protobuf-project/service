@@ -101,7 +101,7 @@ func main() {
 		}
 		if *language == "rust" {
 			return protokit.RunPlugin(p, protokit.Options{Target: rustgen.TargetName, Strict: *strict, Version: v},
-				rustgen.Plugin(rustgen.Settings{ProtoModule: *rustProtoModule, ServiceModule: *rustServiceModule, ErrorDomain: *domain}, cfg))
+				rustgen.Plugin(rustgen.Settings{ProtoModule: *rustProtoModule, ServiceModule: *rustServiceModule, ErrorDomain: *domain}, cfg, generator.ResolveVersions(v)))
 		}
 		if *language != "go" {
 			return fmt.Errorf("service: unsupported lang %q (use go or rust)", *language)

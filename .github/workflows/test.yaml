@@ -36,6 +36,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Install Rust formatter
+        run: rustup component add rustfmt
       - name: Test
         run: go test -race ./...
 
@@ -48,10 +50,16 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Check generated fixtures
-        run: go test ./plugin/rustgen
       - name: Install Rust
-        run: rustup toolchain install stable --profile minimal
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - name: Check generated fixtures
+        env:
+          RUSTUP_TOOLCHAIN: stable
+        run: go test ./plugin/rustgen
+      - name: Check Rust formatting
+        run: cargo +stable fmt --manifest-path examples/rust/Cargo.toml --check
+      - name: Lint Rust services
+        run: cargo +stable clippy --locked --manifest-path examples/rust/Cargo.toml --all-targets -- -D warnings
       - name: Compile and test Rust services
         run: cargo +stable test --locked --manifest-path examples/rust/Cargo.toml
 
@@ -66,6 +74,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Install Rust formatter
+        run: rustup component add rustfmt
       - name: Root module, no workspace
         env:
           GOWORK: off

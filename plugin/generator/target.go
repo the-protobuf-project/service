@@ -270,3 +270,6 @@ var standardReasons = []*spec.ErrorReason{
 	{Name: "INVALID_ARGUMENT", CodeName: "INVALID_ARGUMENT", Description: "The request is wrong in a way no more specific reason names (a bad filter, a bad page token).", Fix: "Read the message."},
 	{Name: "INVALID_STATE", CodeName: "FAILED_PRECONDITION", Description: "The resource's state forbids the call, in a way no more specific reason names.", Fix: "Read the message."},
 }
+
+// PackageSources returns the sorted source files contributing to a package.
+func PackageSources(pkg *spec.Package) []string { return packageSources(pkg) }

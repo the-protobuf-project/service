@@ -83,3 +83,8 @@ func orUnknown(v string) string {
 	}
 	return v
 }
+
+// Banner renders the common provenance header for every language target.
+func Banner(p *protogen.Plugin, v Versions, sources []string, note string) string {
+	return banner(p, v, sources, note)
+}
