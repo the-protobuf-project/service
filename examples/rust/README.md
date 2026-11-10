@@ -28,3 +28,19 @@ with `file_descriptor_set_path(...)`, then load it into `servicex::Options`.
 The in-memory repository in `tests/service.rs` is a test fixture, not a database
 backend: production repositories must implement the full list/filter contract,
 server-generated values, and atomic conditional mutations.
+
+`src/generated/streams.v1.svc.rs` contains all RPC kinds from
+`plugin/rustgen/testdata/streaming/streaming.proto`:
+
+| RPC | Kind |
+|---|---|
+| `Wrap` | Unary |
+| `Watch` | Server streaming |
+| `Upload` | Client streaming |
+| `Exchange` | Bidirectional streaming |
+
+Implement `EntriesCustom` and pass it to `EntriesServer::with_custom`.
+See `tests/streaming.rs` for working handlers and a tonic client/server test
+covering metadata, stream errors, empty input, and bidirectional messages sent
+before the client closes its stream. Stream item types are derived from each
+RPC's protobuf request and response types.
