@@ -14,6 +14,7 @@ import (
 
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/the-protobuf-project/protokit/naming"
 
@@ -176,6 +177,26 @@ func (b *builder) adapter(m *protogen.Message, ao *servicepbv1.AdapterOptions) (
 	for _, req := range role.required {
 		if a.Fields[req] == nil {
 			return nil, fmt.Errorf("service: %s: role %s needs a %s field (or a fields entry naming the one that holds it)", m.Desc.FullName(), ao.GetRole(), req)
+		}
+	}
+	for key, fd := range a.Fields {
+		valid := false
+		switch key {
+		case "event_types":
+			valid = fd.Desc.IsList() && fd.Desc.Kind() == protoreflect.StringKind
+		case "state":
+			valid = fd.Enum != nil && !fd.Desc.IsList()
+		case "paused":
+			valid = isBool(fd)
+		case "attempt_count", "response_code":
+			valid = isInt32(fd)
+		case "rotate_time", "create_time", "delete_time", "next_attempt_time", "deliver_time", "update_time", "position":
+			valid = isMessage(fd, "google.protobuf.Timestamp")
+		default:
+			valid = isString(fd)
+		}
+		if !valid {
+			return nil, fmt.Errorf("service: %s: role %s field %s has an incompatible type", m.Desc.FullName(), ao.GetRole(), key)
 		}
 	}
 	if st := a.Fields["state"]; st != nil && st.Enum != nil {

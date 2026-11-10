@@ -11,18 +11,21 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"runtime/debug"
 	"strings"
 
 	"google.golang.org/protobuf/compiler/protogen"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/pluginpb"
 
 	"github.com/the-protobuf-project/protokit"
 	"github.com/the-protobuf-project/protokit/header"
 
 	"github.com/the-protobuf-project/service/plugin/generator"
+	"github.com/the-protobuf-project/service/plugin/rustgen"
 	"github.com/the-protobuf-project/service/plugin/spec"
 )
 
@@ -75,6 +78,9 @@ func main() {
 	header.SetTool("protoc-gen-service")
 
 	var flags flag.FlagSet
+	language := flags.String("lang", "go", "output language: go or rust")
+	rustProtoModule := flags.String("rust_proto_module", "crate::pb", "Rust module containing prost/tonic packages")
+	rustServiceModule := flags.String("rust_service_module", "crate::service", "Rust module containing the generated mod.rs")
 	goModule := flags.String("go_module", "", "Go import path of this plugin's out directory (servicex lives under it)")
 	repositoryModule := flags.String("repository_module", "", "Go import path of protoc-gen-store's repository output (its go_module opt)")
 	configPath := flags.String("config", "", "path to service.yaml: the store's datasources layout and per-package bindings")
@@ -87,11 +93,18 @@ func main() {
 	domain := flags.String("error_domain", "", "google.rpc.ErrorInfo domain; default each service's google.api.default_host")
 	strict := flags.String("strict", "", "per-rule severity for schema problems, as protoc-gen-store takes it")
 
-	protogen.Options{ParamFunc: flags.Set}.Run(func(p *protogen.Plugin) error {
+	run(protogen.Options{ParamFunc: flags.Set}, func(p *protogen.Plugin) error {
 		p.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)
 		cfg, err := generator.LoadConfig(*configPath)
 		if err != nil {
 			return err
+		}
+		if *language == "rust" {
+			return protokit.RunPlugin(p, protokit.Options{Target: rustgen.TargetName, Strict: *strict, Version: v},
+				rustgen.Plugin(rustgen.Settings{ProtoModule: *rustProtoModule, ServiceModule: *rustServiceModule, ErrorDomain: *domain}, cfg))
+		}
+		if *language != "go" {
+			return fmt.Errorf("service: unsupported lang %q (use go or rust)", *language)
 		}
 		settings := generator.Settings{
 			GoModule:         *goModule,
@@ -106,4 +119,45 @@ func main() {
 			protokit.Options{Target: generator.TargetName, Strict: *strict, Version: v},
 			generator.Plugin(settings, cfg, generator.ResolveVersions(v)))
 	})
+}
+
+// Read the request before protogen resolves Go imports: Rust schemas need not
+// declare go_package. The synthetic mappings are only used by the neutral IR.
+func run(opts protogen.Options, generate func(*protogen.Plugin) error) {
+	request := new(pluginpb.CodeGeneratorRequest)
+	data, err := io.ReadAll(os.Stdin)
+	if err == nil {
+		err = proto.Unmarshal(data, request)
+	}
+	response := new(pluginpb.CodeGeneratorResponse)
+	if err == nil {
+		lang := "go"
+		for _, parameter := range strings.Split(request.GetParameter(), ",") {
+			if value, ok := strings.CutPrefix(parameter, "lang="); ok {
+				lang = value
+			}
+		}
+		if lang == "rust" {
+			rustgen.PrepareRequest(request)
+		}
+		var p *protogen.Plugin
+		p, err = opts.New(request)
+		if err == nil {
+			if e := generate(p); e != nil {
+				p.Error(e)
+			}
+			response = p.Response()
+		}
+	}
+	if err != nil {
+		response.Error = proto.String(err.Error())
+	}
+	data, err = proto.Marshal(response)
+	if err == nil {
+		_, err = os.Stdout.Write(data)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }

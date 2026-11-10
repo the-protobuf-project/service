@@ -6,6 +6,7 @@ package spec
 import (
 	"strings"
 
+	"github.com/the-protobuf-project/protokit/naming"
 	"google.golang.org/genproto/googleapis/api/annotations"
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/proto"
@@ -97,6 +98,16 @@ func (b *builder) method(svc *protogen.Service, m *protogen.Method) *Method {
 	if kind == Undelete && !r.SoftDelete {
 		b.warn("%s.%s stays custom: %s has no OUTPUT_ONLY delete_time, so its repository has no Undelete", svc.Desc.FullName(), name, r.Message.Desc.FullName())
 		return out
+	}
+	if kind == List {
+		rd, _ := proto.GetExtension(res.Desc.Options(), annotations.E_Resource).(*annotations.ResourceDescriptor)
+		plural := rd.GetPlural()
+		if plural == "" {
+			plural = naming.Pluralize(naming.SnakeCase(string(res.Desc.Name())))
+		}
+		if name != "List"+naming.PascalGo(plural) {
+			return &Method{Proto: m}
+		}
 	}
 
 	out.Name = stringField(in, "name")

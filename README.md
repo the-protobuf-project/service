@@ -159,6 +159,49 @@ Adapter roles and their conventional fields (rename with `fields`):
 
 Extension numbers 53000-53006.
 
+## Rust services
+
+Select `lang=rust` on the same plugin to generate tonic service implementations:
+
+```yaml
+plugins:
+  - local: protoc-gen-service
+    out: src/service
+    strategy: all
+    opt:
+      - lang=rust
+      - rust_proto_module=crate::pb
+      - rust_service_module=crate::service
+```
+
+Generate prost messages and tonic server bindings separately with
+`tonic-prost-build`, preserving the proto package module hierarchy under `pb`.
+Add `pub mod service;` to your crate. Rust generation does not require
+`go_package`, `go_module`, or `repository_module`. Both Rust module options
+shown above are their defaults; `error_domain` also applies to Rust.
+
+The output contains `mod.rs`, one `<proto.package>.svc.rs` per package, and
+`servicex.rs`. It includes standard CRUD and undelete/purge methods, async
+repository and hook traits, custom method traits (including streaming), typed
+error constructors, change feeds, and event/idempotency record adapters.
+Construct a generated server with `servicex::Options` and a
+`servicex::Resource` for each resource, then register `server.into_service()`
+with tonic. `Options` takes a `prost_reflect::DescriptorPool` containing your
+schema and its imports; it supplies field behavior and mask metadata.
+
+Implement the generated `Repository<M>` trait for your persistence layer.
+Mutations must enforce etags atomically; repositories also implement filtering,
+ordering, paging, timestamps and soft deletion. Adapter settlement may update
+output-only fields through `update_with_output_only`. Hooks receive request
+metadata and extensions through `Context`; custom RPCs receive tonic requests.
+
+The Rust target uses tonic 0.14, prost/prost-types 0.14, tonic-types 0.14,
+prost-reflect 0.16 with `serde`, futures-core 0.3, and serde_json 1. See the
+[compilable Rust example](examples/rust) for dependencies and behavior tests.
+Rust currently supplies tonic registration and standalone record adapters;
+automatic REST/MCP registration, an event dispatcher, and bridges to
+runtime-rs persistence/idempotency traits are not generated.
+
 ## Developing
 
 ```bash

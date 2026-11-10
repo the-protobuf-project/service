@@ -1,0 +1,11 @@
+syntax = "proto3";
+package streams.v1;
+option go_package = "example.com/streams/v1;streamsv1";
+import "google/protobuf/wrappers.proto";
+message Entry { string type = 1; }
+service Entries {
+ rpc Wrap(google.protobuf.StringValue) returns (google.protobuf.BytesValue);
+ rpc Watch(Entry) returns (stream Entry);
+ rpc Upload(stream Entry) returns (Entry);
+ rpc Exchange(stream Entry) returns (stream Entry);
+}

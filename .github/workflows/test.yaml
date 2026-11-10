@@ -39,6 +39,22 @@ jobs:
       - name: Test
         run: go test -race ./...
 
+  rust:
+    name: Generated Rust services
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check generated fixtures
+        run: go test ./plugin/rustgen
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Compile and test Rust services
+        run: cargo +stable test --locked --manifest-path examples/rust/Cargo.toml
+
   standalone:
     name: Modules build standalone
     runs-on: ubuntu-latest
