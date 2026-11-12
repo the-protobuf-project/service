@@ -1,0 +1,29 @@
+{{ .Banner }}
+
+package server
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+// corsOption is the HTTP port's CORS policy as a server option, nil when
+// [server.cors] is off.
+func corsOption(c config.CORSConfig) (grpc.Option, error) {
+	if !c.Enabled {
+		return nil, nil
+	}
+	policy := grpc.CORSPolicy{
+		AllowedOrigins:   c.AllowedOrigins,
+		AllowedMethods:   c.AllowedMethods,
+		AllowedHeaders:   c.AllowedHeaders,
+		ExposedHeaders:   c.ExposedHeaders,
+		AllowCredentials: c.AllowCredentials,
+		MaxAge:           c.MaxAge(),
+	}
+	if err := policy.Validate(); err != nil {
+		return nil, fmt.Errorf("config invalid: server.cors: %w", err)
+	}
+	return grpc.WithCORS(policy), nil
+}

@@ -1,0 +1,38 @@
+{{ .Banner }}
+
+package database
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+// Open connects to the configured Postgres, bounds its pool, and opens the
+// cache when [cache] is enabled.
+func Open() (*Connection, error) {
+	pg := config.Get().Database.Postgres
+	db, err := OpenGorm(pg.DSN(), &gorm.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("open postgres: %w", err)
+	}
+	if err := BoundPool(db, pg.Pool()); err != nil {
+		return nil, err
+	}
+	conn := &Connection{PgSQLConn: db}
+	conn.attachCache(context.Background())
+	return conn, nil
+}
+
+// BoundPool applies pool to db's connection pool.
+func BoundPool(db *gorm.DB, pool config.PoolSettings) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("postgres pool handle: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(pool.MaxOpen)
+	sqlDB.SetMaxIdleConns(pool.MaxIdle)
+	sqlDB.SetConnMaxLifetime(pool.MaxLifetime)
+	sqlDB.SetConnMaxIdleTime(pool.MaxIdleTime)
+	return nil
+}

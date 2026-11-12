@@ -1,0 +1,126 @@
+{{ .Banner }}
+
+package server
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+// purgePage is how many deleted records one read lists.
+const purgePage = 100
+
+// Purger ends soft deletes (AIP-164): a record deleted longer ago than the
+// retention is purged for good. A record something still refers to is kept,
+// as the repository's Purge keeps it, and tried again the next sweep.
+type Purger struct {
+	kinds     []purgeKind
+	retention time.Duration
+	now       func() time.Time
+	purged    telemetry.Counter
+}
+
+// deletable is what the purger reads of a soft-deletable record.
+type deletable interface {
+	GetName() string
+	GetDeleteTime() *timestamppb.Timestamp
+}
+
+// purgeKind is one soft-deletable resource: how to list its deleted records
+// and purge one.
+type purgeKind struct {
+	kind  string
+	list  func(ctx context.Context, in repox.ListInput) ([]deletable, string, error)
+	purge func(ctx context.Context, name string) error
+}
+
+// NewPurger returns the purger of every soft-deletable resource in r.
+func NewPurger(r Repositories, retention time.Duration, meter telemetry.Meter) *Purger {
+	if meter == nil {
+		meter = telemetry.NoopMeter
+	}
+	return &Purger{retention: retention, now: time.Now,
+		purged: meter.Counter("{{ .Name }}.purge.purged", telemetry.WithUnit("1"),
+			telemetry.WithDescription("Soft-deleted records removed for good once their retention passed, by kind.")),
+		kinds: []purgeKind{
+{{- range .Purge }}
+			{
+				kind: {{ quote .Kind }},
+				list: func(ctx context.Context, in repox.ListInput) ([]deletable, string, error) {
+					return records({{ .List }})
+				},
+				purge: {{ .Repo }}.Purge,
+			},
+{{- end }}
+		}}
+}
+
+func records[T deletable](rows []T, next string, err error) ([]deletable, string, error) {
+	out := make([]deletable, len(rows))
+	for i, r := range rows {
+		out[i] = r
+	}
+	return out, next, err
+}
+
+// Sweep purges every record deleted before the retention, and returns how
+// many it purged.
+func (p *Purger) Sweep(ctx context.Context) (int, error) {
+	cutoff := p.now().Add(-p.retention)
+	purged := 0
+	for _, k := range p.kinds {
+		// Read every name first: purging while paging would move the pages.
+		var due []string
+		in := repox.ListInput{PageSize: purgePage, ShowDeleted: true,
+			Filter: fmt.Sprintf("delete_time < %q", cutoff.UTC().Format(time.RFC3339Nano))}
+		for {
+			rows, next, err := k.list(ctx, in)
+			if err != nil {
+				return purged, fmt.Errorf("list deleted %s: %w", k.kind, err)
+			}
+			for _, r := range rows {
+				if t := r.GetDeleteTime(); t != nil && t.AsTime().Before(cutoff) {
+					due = append(due, r.GetName())
+				}
+			}
+			if next == "" {
+				break
+			}
+			in.PageToken = next
+		}
+		n := 0
+		for _, name := range due {
+			if err := k.purge(ctx, name); err != nil && !errors.Is(err, repox.ErrNotFound) {
+				p.purged.Add(ctx, float64(n), telemetry.Labels{"kind": k.kind})
+				return purged + n, fmt.Errorf("purge %s: %w", name, err)
+			}
+			n++
+		}
+		purged += n
+		p.purged.Add(ctx, float64(n), telemetry.Labels{"kind": k.kind})
+	}
+	return purged, nil
+}
+
+// Start sweeps every interval (0 is an hour) until ctx is cancelled,
+// reporting each failed sweep to logErr.
+func (p *Purger) Start(ctx context.Context, interval time.Duration, logErr func(error)) {
+	if interval <= 0 {
+		interval = time.Hour
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			if _, err := p.Sweep(ctx); err != nil && ctx.Err() == nil && logErr != nil {
+				logErr(err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+}

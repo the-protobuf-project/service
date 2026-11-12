@@ -256,7 +256,7 @@ fn check_name(
     }
     Ok(())
 }
-fn check_id(o: &Options, id: &str) -> Result<(), Status> {
+fn check_id(o: &Options, field: &str, id: &str) -> Result<(), Status> {
     if id.is_empty() {
         return Ok(());
     }
@@ -267,7 +267,7 @@ fn check_id(o: &Options, id: &str) -> Result<(), Status> {
         || b.iter()
             .any(|c| !c.is_ascii_lowercase() && !c.is_ascii_digit() && *c != b'-')
     {
-        return Err(o.bad_field("INVALID_ID","resource_id","id must start with a lowercase letter and contain only lowercase letters, digits and hyphens (at most 63 characters)"));
+        return Err(o.bad_field("INVALID_ID",field,"id must start with a lowercase letter and contain only lowercase letters, digits and hyphens (at most 63 characters)"));
     }
     Ok(())
 }
@@ -281,6 +281,9 @@ fn check_etag(o: &Options, want: &str, have: &str) -> Result<(), Status> {
     } else {
         Ok(())
     }
+}
+fn id_of(name: &str) -> &str {
+    name.rsplit('/').next().unwrap_or("")
 }
 fn parent_of(name: &str) -> &str {
     name.rsplit_once('/')
@@ -483,7 +486,7 @@ impl<'a, M: Message + Default + Send + Sync + 'static> Call<'a, M> {
             spec: s,
             ..
         } = self;
-        check_id(o, id)?;
+        check_id(o, "resource_id", id)?;
         if s.collections.len() > 1 {
             check_name(
                 o,
@@ -565,6 +568,9 @@ impl<'a, M: Message + Default + Send + Sync + 'static> Call<'a, M> {
         let existing = match r.repository.get(c, &name).await {
             Ok(v) => v,
             Err(e) if e.code() == Code::NotFound && allow_missing => {
+                // AIP-134 allow_missing creates under the id the name
+                // chooses, held to Create's rule.
+                check_id(o, "name", id_of(&name))?;
                 return self.create_named(parent_of(&name), &name, value, dry).await;
             }
             Err(e) => return Err(mapped(o, e)),

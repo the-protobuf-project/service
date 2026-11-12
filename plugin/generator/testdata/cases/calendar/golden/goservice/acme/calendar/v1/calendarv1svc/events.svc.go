@@ -100,16 +100,18 @@ func (NopEventsHooks) BeforeUndeleteEvent(ctx context.Context, name string) erro
 // EventsServer serves acme.calendar.v1.Events's AIP standard methods over the
 // generated repositories.
 //
-// Custom methods are answered by the embedded UnimplementedEventsServer
-// until you write them: embed *EventsServer in a type of your own and
-// define ExpandEvent on it. Define a standard method there too to
-// replace the generated one.
+// Its custom methods (ExpandEvent) run the EventsLogic given with WithLogic;
+// without one they answer UNIMPLEMENTED.
+//
+// To replace any method, generated or custom, embed *EventsServer in a
+// type of your own and define the method there.
 type EventsServer struct {
 	calendarv1.UnimplementedEventsServer
 
 	repos EventsRepositories
 	hooks EventsHooks
 	opts  servicex.Options
+	logic EventsLogic
 }
 
 var _ calendarv1.EventsServer = (*EventsServer)(nil)
@@ -134,6 +136,40 @@ func (s *EventsServer) Options() servicex.Options { return s.opts }
 
 // Repositories are the repositories the server persists through.
 func (s *EventsServer) Repositories() EventsRepositories { return s.repos }
+
+// EventsLogic is the business logic of acme.calendar.v1.Events's custom
+// methods. The server runs each through Options().Run, traced and with its
+// error rendered by the translator, so an implementation returns plain errors:
+// a *problem.Problem, an error wrapping a registered sentinel, or a status.
+type EventsLogic interface {
+	ExpandEvent(ctx context.Context, req *calendarv1.ExpandEventRequest) (*calendarv1.ExpandEventResponse, error)
+}
+
+// WithLogic sets the implementation of the custom methods and returns s.
+func (s *EventsServer) WithLogic(l EventsLogic) *EventsServer {
+	s.logic = l
+	return s
+}
+
+// HasLogic reports whether s was given a EventsLogic, which an
+// assembly checks before it serves.
+func (s *EventsServer) HasLogic() bool { return s.logic != nil }
+
+// ExpandEvent runs the EventsLogic's ExpandEvent.
+func (s *EventsServer) ExpandEvent(ctx context.Context, req *calendarv1.ExpandEventRequest) (*calendarv1.ExpandEventResponse, error) {
+	if s.logic == nil {
+		return s.UnimplementedEventsServer.ExpandEvent(ctx, req)
+	}
+	var out *calendarv1.ExpandEventResponse
+	err := s.opts.Run(ctx, "Events", "ExpandEvent", func(ctx context.Context) (err error) {
+		out, err = s.logic.ExpandEvent(ctx, req)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
 
 const eventsEventType = "calendar.acme.example/Event"
 
@@ -270,6 +306,11 @@ func (s *EventsServer) UpdateEvent(ctx context.Context, req *calendarv1.UpdateEv
 		}
 		paths, err := servicex.UpdatePaths(in, req.GetUpdateMask(), "event", eventsEventOutputOnly)
 		if err != nil {
+			return err
+		}
+		// AIP-203: a REQUIRED field the mask writes must be set, or the
+		// update would clear it.
+		if err := servicex.Required(in, "event", servicex.Selected(paths, eventsEventRequired)); err != nil {
 			return err
 		}
 		if err := s.hooks.ValidateEvent(ctx, servicex.OpUpdate, in, paths); err != nil {

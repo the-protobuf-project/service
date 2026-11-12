@@ -1,0 +1,218 @@
+{{ .Banner }}
+
+// Package telemetry is {{ .Name }}'s process telemetry pipeline -- logs,
+// metrics and traces -- and the logging helpers everything else calls. The
+// pipeline is built by Init, at startup, never at import.
+package telemetry
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+//go:embed telemetry.toml
+var telemetryConfigData []byte
+
+var (
+	// Telemetry is the process's pipeline; nil until Init has run.
+	Telemetry *telemetry.Telemetry
+	once      sync.Once // once builds the pipeline at most once.
+	initErr   error
+)
+
+// Init builds the pipeline from the embedded telemetry.toml and the
+// deployment's environment ({{ .Env }}OTLP_ENDPOINT, {{ .Env }}OTLP_SECURE,
+// {{ .Env }}TELEMETRY_ENVIRONMENT, {{ .Env }}SITE), and hands it to
+// runtime-go. It builds once: later calls return the first result.
+func Init() error {
+	once.Do(func() {
+		b := telemetry.New()
+		if tmpPath, err := writeTelemetryConfig(); err == nil {
+			defer os.Remove(tmpPath) //nolint:errcheck
+			b.WithConfig(tmpPath)
+		} else {
+			name, version, description, err := telemetryService()
+			if err != nil {
+				initErr = fmt.Errorf("read embedded telemetry config: %w", err)
+				return
+			}
+			b.WithService(name, version).WithDescription(description)
+		}
+		b.WithTracing()
+		applyDeploymentOverrides(b)
+
+		o, err := b.Build()
+		if err != nil {
+			initErr = fmt.Errorf("create telemetry: %w", err)
+			return
+		}
+		Use(o)
+		observability.Adopt(o)
+	})
+	return initErr
+}
+
+// Use makes t the process's pipeline: for a test that builds its own.
+func Use(t *telemetry.Telemetry) {
+	Telemetry = t
+}
+
+// Info logs msg with key/value pairs; nothing without a pipeline.
+func Info(msg string, kv ...any) {
+	if t := Telemetry; t != nil {
+		t.Logger.Info(msg, fields(kv)...)
+	}
+}
+
+// Debug logs msg with key/value pairs; nothing without a pipeline.
+func Debug(msg string, kv ...any) {
+	if t := Telemetry; t != nil {
+		t.Logger.Debug(msg, fields(kv)...)
+	}
+}
+
+// Warn logs msg with key/value pairs; nothing without a pipeline.
+func Warn(msg string, kv ...any) {
+	if t := Telemetry; t != nil {
+		t.Logger.Warn(msg, fields(kv)...)
+	}
+}
+
+// Error logs msg with key/value pairs; nothing without a pipeline.
+func Error(msg string, kv ...any) {
+	if t := Telemetry; t != nil {
+		_ = t.Logger.Error(msg, fields(kv)...)
+	}
+}
+
+// fields turns key/value pairs into the one map the logger takes, errors as
+// their message.
+func fields(kv []any) []any {
+	if len(kv) <= 1 {
+		return kv
+	}
+	m := make(map[string]any, (len(kv)+1)/2)
+	for i := 0; i < len(kv); i += 2 {
+		if i+1 == len(kv) {
+			m["extra"] = kv[i]
+			break
+		}
+		v := kv[i+1]
+		if err, ok := v.(error); ok {
+			v = err.Error()
+		}
+		m[fmt.Sprint(kv[i])] = v
+	}
+	return []any{m}
+}
+
+// deploymentEnvironment is the environment telemetry reports: what the
+// deployment says, else production for a binary run outside a checkout.
+func deploymentEnvironment() string {
+	if env := os.Getenv("{{ .Env }}TELEMETRY_ENVIRONMENT"); env != "" {
+		return env
+	}
+	if env := os.Getenv("{{ .Env }}SERVER__ENVIRONMENT"); env != "" {
+		return env
+	}
+	switch os.Getenv("{{ .Env }}PROFILE") {
+	case "release":
+		return "production"
+	case "dev":
+		return ""
+	}
+	if _, err := os.Stat("{{ .Name }}.dev.toml"); err != nil {
+		return "production"
+	}
+	return ""
+}
+
+func applyDeploymentOverrides(b *telemetry.Builder) {
+	if env := deploymentEnvironment(); env != "" {
+		b.WithEnvironment(options.Environment(env))
+	}
+	if endpoint := os.Getenv("{{ .Env }}OTLP_ENDPOINT"); endpoint != "" {
+		if host, port, ok := splitHostPort(endpoint); ok {
+			b.WithOTLP(host, port)
+		} else {
+			fmt.Printf("WARNING: ignoring malformed {{ .Env }}OTLP_ENDPOINT %q (want host:port)\n", endpoint)
+		}
+	}
+	if secure, err := strconv.ParseBool(os.Getenv("{{ .Env }}OTLP_SECURE")); err == nil {
+		b.WithOTLPSecure(secure)
+	}
+	labels := instanceLabels()
+	if v := os.Getenv("{{ .Env }}SITE"); v != "" {
+		labels["site"] = v
+	}
+	if v := os.Getenv("{{ .Env }}SITE_NAME"); v != "" {
+		labels["site_name"] = v
+	}
+	if len(labels) > 0 {
+		b.WithLabels(labels)
+	}
+}
+
+func instanceLabels() map[string]string {
+	labels := map[string]string{}
+	host, _ := os.Hostname()
+	if host != "" {
+		labels["host.name"] = host
+	}
+	id := os.Getenv("{{ .Env }}TELEMETRY_INSTANCE_ID")
+	if id == "" {
+		id = host
+	}
+	if id != "" {
+		labels["service.instance.id"] = id
+	}
+	return labels
+}
+
+func splitHostPort(endpoint string) (host string, port int, ok bool) {
+	h, portStr, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return "", 0, false
+	}
+	p, err := strconv.Atoi(portStr)
+	if err != nil {
+		return "", 0, false
+	}
+	return h, p, true
+}
+
+// writeTelemetryConfig writes the embedded config where the builder, which
+// reads a path, can find it.
+func writeTelemetryConfig() (string, error) {
+	f, err := os.CreateTemp("", "telemetry-*.toml")
+	if err != nil {
+		return "", fmt.Errorf("create temp file: %w", err)
+	}
+	if _, err := f.Write(telemetryConfigData); err != nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("write telemetry config: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("close temp file: %w", err)
+	}
+	return f.Name(), nil
+}
+
+func telemetryService() (name, version, description string, err error) {
+	k := koanf.New(".")
+	if err := k.Load(rawbytes.Provider(telemetryConfigData), toml.Parser()); err != nil {
+		return "", "", "", err
+	}
+	return k.String("service.name"), k.String("service.version"), k.String("service.description"), nil
+}
+
+// Close flushes and stops the pipeline.
+func Close() error {
+	if Telemetry != nil {
+		return Telemetry.Close()
+	}
+	return nil
+}

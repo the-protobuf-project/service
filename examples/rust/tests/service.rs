@@ -366,6 +366,20 @@ async fn required_names_allow_missing_and_paging() {
         .unwrap()
         .into_inner();
     assert_eq!(out.name, "organizations/a");
+    // allow_missing chooses the id through the name, held to Create's rule.
+    let err = s
+        .update_organization(Request::new(directory::UpdateOrganizationRequest {
+            organization: Some(directory::Organization {
+                name: "organizations/Not_Valid".into(),
+                display_name: "X".into(),
+                ..Default::default()
+            }),
+            allow_missing: true,
+            ..Default::default()
+        }))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), Code::InvalidArgument);
     create(&s, "b").await;
     let page = s
         .list_organizations(Request::new(Default::default()))

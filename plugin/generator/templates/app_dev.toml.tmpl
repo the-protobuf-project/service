@@ -1,0 +1,41 @@
+{{ .Banner }}
+
+# Local development profile for {{ .Name }}.
+#
+# Loaded over the release defaults from {{ .Name }}.dev.toml in the working
+# directory when present, or from the embedded copy with {{ .Env }}PROFILE=dev.
+# Safe to hold localhost credentials. Keys defined here win; anything omitted
+# falls through to the release defaults. To change it, copy this file to the
+# working directory and edit the copy.
+
+[server]
+environment = "debug"
+enable_http = true
+enable_health = true
+enable_mcp = true
+
+[database.postgres]
+host = "127.0.0.1"
+port = 5432
+user = "postgres"
+password = "postgres"
+dbname = "{{ .Name }}"
+sslmode = "disable"
+
+[cache]
+enabled = false
+address = "127.0.0.1:6379"
+prefix = "{{ .Name }}-dev"
+{{- if .Webhooks }}
+
+[webhooks]
+enabled = true
+interval_seconds = 5
+allow_private_networks = true
+{{- end }}
+{{- if .Purge }}
+
+[retention]
+purge = true
+deleted_days = 30
+{{- end }}

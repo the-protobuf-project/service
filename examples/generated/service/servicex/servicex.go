@@ -424,6 +424,18 @@ func TouchesAny(paths, fields []string) bool {
 	return false
 }
 
+// Selected is the fields of fields that paths selects (see Touches): every
+// one of them for an empty mask.
+func Selected(paths, fields []string) []string {
+	var out []string
+	for _, f := range fields {
+		if Touches(paths, f) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 // CheckImmutable refuses, with IMMUTABLE_FIELD, an update whose mask selects
 // an IMMUTABLE field (AIP-203) to a value other than the stored one. Sending
 // the stored value back is allowed, so a read-modify-write with "*" works.

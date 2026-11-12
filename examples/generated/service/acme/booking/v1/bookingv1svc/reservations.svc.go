@@ -71,16 +71,18 @@ func (NopReservationsHooks) AfterUpdateReservation(ctx context.Context, m *booki
 // ReservationsServer serves acme.booking.v1.Reservations's AIP standard methods over the
 // generated repositories.
 //
-// Custom methods are answered by the embedded UnimplementedReservationsServer
-// until you write them: embed *ReservationsServer in a type of your own and
-// define CreateReservation on it. Define a standard method there too to
-// replace the generated one.
+// Its custom methods (CreateReservation) run the ReservationsLogic given with WithLogic;
+// without one they answer UNIMPLEMENTED.
+//
+// To replace any method, generated or custom, embed *ReservationsServer in a
+// type of your own and define the method there.
 type ReservationsServer struct {
 	bookingv1.UnimplementedReservationsServer
 
 	repos ReservationsRepositories
 	hooks ReservationsHooks
 	opts  servicex.Options
+	logic ReservationsLogic
 }
 
 var _ bookingv1.ReservationsServer = (*ReservationsServer)(nil)
@@ -105,6 +107,40 @@ func (s *ReservationsServer) Options() servicex.Options { return s.opts }
 
 // Repositories are the repositories the server persists through.
 func (s *ReservationsServer) Repositories() ReservationsRepositories { return s.repos }
+
+// ReservationsLogic is the business logic of acme.booking.v1.Reservations's custom
+// methods. The server runs each through Options().Run, traced and with its
+// error rendered by the translator, so an implementation returns plain errors:
+// a *problem.Problem, an error wrapping a registered sentinel, or a status.
+type ReservationsLogic interface {
+	CreateReservation(ctx context.Context, req *bookingv1.CreateReservationRequest) (*bookingv1.Reservation, error)
+}
+
+// WithLogic sets the implementation of the custom methods and returns s.
+func (s *ReservationsServer) WithLogic(l ReservationsLogic) *ReservationsServer {
+	s.logic = l
+	return s
+}
+
+// HasLogic reports whether s was given a ReservationsLogic, which an
+// assembly checks before it serves.
+func (s *ReservationsServer) HasLogic() bool { return s.logic != nil }
+
+// CreateReservation runs the ReservationsLogic's CreateReservation.
+func (s *ReservationsServer) CreateReservation(ctx context.Context, req *bookingv1.CreateReservationRequest) (*bookingv1.Reservation, error) {
+	if s.logic == nil {
+		return s.UnimplementedReservationsServer.CreateReservation(ctx, req)
+	}
+	var out *bookingv1.Reservation
+	err := s.opts.Run(ctx, "Reservations", "CreateReservation", func(ctx context.Context) (err error) {
+		out, err = s.logic.CreateReservation(ctx, req)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
 
 const reservationsReservationType = "booking.acme.example/Reservation"
 
@@ -178,6 +214,11 @@ func (s *ReservationsServer) UpdateReservation(ctx context.Context, req *booking
 		}
 		paths, err := servicex.UpdatePaths(in, req.GetUpdateMask(), "reservation", reservationsReservationOutputOnly)
 		if err != nil {
+			return err
+		}
+		// AIP-203: a REQUIRED field the mask writes must be set, or the
+		// update would clear it.
+		if err := servicex.Required(in, "reservation", servicex.Selected(paths, reservationsReservationRequired)); err != nil {
 			return err
 		}
 		if servicex.TouchesAny(paths, reservationsReservationImmutable) {

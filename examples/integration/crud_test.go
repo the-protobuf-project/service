@@ -128,6 +128,12 @@ func TestUpdate(t *testing.T) {
 	_, err = s.UpdateOrganization(c, &directoryv1.UpdateOrganizationRequest{Organization: &directoryv1.Organization{Name: org.GetName()}})
 	wantStatus(t, err, codes.InvalidArgument, servicex.ReasonNothingToUpdate)
 
+	_, err = s.UpdateOrganization(c, &directoryv1.UpdateOrganizationRequest{
+		Organization: &directoryv1.Organization{Name: org.GetName()},
+		UpdateMask:   &fieldmaskpb.FieldMask{Paths: []string{"display_name"}}, // would clear a REQUIRED field
+	})
+	wantStatus(t, err, codes.InvalidArgument, servicex.ReasonRequiredField)
+
 	preview := must(s.UpdateOrganization(c, &directoryv1.UpdateOrganizationRequest{
 		Organization: &directoryv1.Organization{Name: org.GetName(), DisplayName: "Preview"},
 		ValidateOnly: true,
@@ -144,6 +150,11 @@ func TestUpdate(t *testing.T) {
 	if created.GetName() != "organizations/upserted" {
 		t.Fatalf("allow_missing created %v", created)
 	}
+	_, err = s.UpdateOrganization(c, &directoryv1.UpdateOrganizationRequest{
+		Organization: &directoryv1.Organization{Name: "organizations/Not_Valid", DisplayName: "x"},
+		AllowMissing: true,
+	})
+	wantStatus(t, err, codes.InvalidArgument, servicex.ReasonInvalidID)
 	_, err = s.UpdateOrganization(c, &directoryv1.UpdateOrganizationRequest{
 		Organization: &directoryv1.Organization{Name: "organizations/missing", DisplayName: "x"},
 	})

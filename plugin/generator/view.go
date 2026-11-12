@@ -49,8 +49,20 @@ func (im *imports) use(path, name string) string {
 
 func (im *imports) std(paths ...string) {
 	for _, p := range paths {
-		im.byPath[p] = p[strings.LastIndex(p, "/")+1:]
+		im.byPath[p] = declaredName(p)
 	}
+}
+
+// declaredName is the package name an import path conventionally declares:
+// its last element, less a major version ("github.com/knadh/koanf/v2" is
+// koanf) and a "-go" suffix ("telemetry/telemetry-go" is telemetry).
+func declaredName(p string) string {
+	parts := strings.Split(p, "/")
+	name := parts[len(parts)-1]
+	if len(parts) > 1 && len(name) > 1 && name[0] == 'v' && strings.Trim(name[1:], "0123456789") == "" {
+		name = parts[len(parts)-2]
+	}
+	return strings.TrimSuffix(name, "-go")
 }
 
 // lines renders the import block, standard library first, refusing two
@@ -59,6 +71,11 @@ func (im *imports) lines(file string) ([]string, error) {
 	byName := map[string]string{}
 	var std, other []string
 	for p, n := range im.byPath {
+		if n == "_" {
+			// A blank import declares no name.
+			std = append(std, "_ "+strconv.Quote(p))
+			continue
+		}
 		if prev, ok := byName[n]; ok {
 			return nil, fmt.Errorf("service: %s would import two packages both named %s (%s and %s), which only an "+
 				"import alias could resolve, and generated code never aliases. Give one of them another name: a "+
@@ -72,7 +89,7 @@ func (im *imports) lines(file string) ([]string, error) {
 			std = append(std, strconv.Quote(p))
 		}
 	}
-	sort.Strings(std)
+	sort.Slice(std, func(i, j int) bool { return strings.TrimPrefix(std[i], "_ ") < strings.TrimPrefix(std[j], "_ ") })
 	sort.Strings(other)
 	if len(std) > 0 && len(other) > 0 {
 		std = append(std, "")
@@ -116,7 +133,16 @@ type serviceView struct {
 	Methods          []*methodView
 	Hooks            []hookView
 	Custom           []string // custom method names, for the doc comment
-	EmptyQ           string   // emptypb qualifier
+	// Logic are the unary custom methods <S>Logic declares and the server
+	// runs through Options().Run; streaming ones stay on the embedded
+	// Unimplemented server.
+	Logic  []logicView
+	EmptyQ string // emptypb qualifier
+}
+
+// logicView is one unary custom method.
+type logicView struct {
+	GoName, Req, Resp string
 }
 
 type resourceView struct {
@@ -232,6 +258,9 @@ func serviceFileView(pkg *spec.Package, svc *spec.Service, servicex, _ string) (
 	for _, m := range svc.Methods {
 		if m.Kind == spec.Custom {
 			v.Custom = append(v.Custom, m.Proto.GoName)
+			if !m.Proto.Desc.IsStreamingClient() && !m.Proto.Desc.IsStreamingServer() {
+				v.Logic = append(v.Logic, logicView{GoName: m.Proto.GoName, Req: im.qualify(m.Proto.Input), Resp: im.qualify(m.Proto.Output)})
+			}
 			continue
 		}
 		r := rv[m.Resource]

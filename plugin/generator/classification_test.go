@@ -32,10 +32,17 @@ func TestCustomListNameStaysCustom(t *testing.T) {
 	if err := protokit.RunPlugin(p, protokit.Options{Target: generator.TargetName}, casePlugin("")); err != nil {
 		t.Fatal(err)
 	}
+	delegated := false
 	for _, f := range p.Response().File {
-		if strings.Contains(f.GetContent(), "func (s *OrganizationsServer) ListRecommendedOrganizations(") {
+		c := f.GetContent()
+		if strings.Contains(c, "AIP-132's List") && strings.Contains(c, "ListRecommendedOrganizations(ctx context.Context, req") &&
+			!strings.Contains(c, "s.logic.ListRecommendedOrganizations(") {
 			t.Fatal("custom list generated as an unfiltered standard list")
 		}
+		delegated = delegated || strings.Contains(c, "out, err = s.logic.ListRecommendedOrganizations(ctx, req)")
+	}
+	if !delegated {
+		t.Fatal("custom list is not delegated to OrganizationsLogic")
 	}
 }
 func TestAdapterStateTypeRejected(t *testing.T) {

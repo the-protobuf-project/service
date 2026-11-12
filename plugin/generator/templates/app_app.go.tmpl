@@ -1,0 +1,132 @@
+{{ .Banner }}
+
+// Package app is {{ .Name }}'s application shell: it builds the telemetry
+// pipeline, loads the configuration, and serves the assembled servers behind
+// a Start / Wait / Stop API. Main is the whole of a command:
+//
+//	func main() { app.Main(app.Options{Provider: provision}) }
+package app
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+// Options are what a command hands the shell.
+type Options struct {
+	// Provider builds the business logic -- hooks, Logic, overrides,
+	// extensions -- over the Deps; nil serves the generated standard methods
+	// alone.
+	Provider server.Provider
+	// Release and Dev are TOML layers of the application's own, over the
+	// generated release defaults and development profile (config.Layers).
+	Release, Dev [][]byte
+}
+
+// App is the top-level application instance. It owns the hybrid server and
+// exposes lifecycle methods for the main goroutine to call.
+type App struct {
+	// Name is the service name read from configuration.
+	Name string
+	// Version is the service version read from configuration.
+	Version string
+
+	opts   Options
+	server *server.Server
+}
+
+// New builds the process's telemetry pipeline, loads the configuration, and
+// creates an App from it. It does not start the server.
+func New(opts Options) (*App, error) {
+	config.Layers.Release = append(config.Layers.Release, opts.Release...)
+	config.Layers.Dev = append(config.Layers.Dev, opts.Dev...)
+	// Telemetry first, then configuration: neither can be done without.
+	if err := telemetry.Init(); err != nil {
+		return nil, fmt.Errorf("create telemetry: %w", err)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, err
+	}
+	telemetry.Debug("Initializing application from config", "name", cfg.Meta.Name, "version", cfg.Meta.Version)
+	return &App{Name: cfg.Meta.Name, Version: cfg.Meta.Version, opts: opts}, nil
+}
+
+// Start creates the hybrid server and begins serving gRPC, HTTP, and MCP
+// traffic. Non-blocking -- call Wait afterwards to keep the process alive.
+// An error means nothing is being served, and the process should exit.
+func (a *App) Start() (string, error) {
+	message := "Starting " + a.Name + " version " + a.Version + " (commit " + buildRevision() + ")"
+	// A build that records no VCS information would show "dev": hand the
+	// banner the commit stamped at link time instead.
+	if buildCommit != "" && buildCommit != "dev" && buildCommit != "unknown" {
+		grpc.BuildRevision = buildCommit
+	}
+	srv, err := server.NewServer(a.Name, a.Version, a.opts.Provider)
+	if err != nil {
+		telemetry.Error("Failed to create server", "error", err)
+		return "", fmt.Errorf("failed to create server: %w", err)
+	}
+	a.server = srv
+	if err := a.server.Start(); err != nil {
+		telemetry.Error("Failed to start server", "error", err)
+		return "", fmt.Errorf("failed to start server: %w", err)
+	}
+	telemetry.Info("Application started", "name", a.Name, "version", a.Version, "commit", buildRevision())
+	return message, nil
+}
+
+// Stop gracefully drains connections, shuts the server down, and releases
+// the telemetry pipeline.
+func (a *App) Stop() error {
+	if a.server != nil {
+		if err := a.server.Stop(); err != nil {
+			telemetry.Error("Error stopping server", "error", err)
+			return fmt.Errorf("failed to stop server: %w", err)
+		}
+	}
+	// Flushing telemetry can fail without the server having stopped any less
+	// cleanly, so it is reported, not returned.
+	if err := telemetry.Close(); err != nil {
+		telemetry.Warn("Telemetry was not flushed on shutdown", "error", err)
+	}
+	return nil
+}
+
+// Wait blocks until the server receives SIGINT or SIGTERM. Returns
+// immediately if Start has not been called.
+func (a *App) Wait() {
+	if a.server != nil {
+		a.server.Wait()
+	}
+}
+
+// Main runs the application to completion: --version, Start, Wait, Stop,
+// exiting non-zero on failure.
+func Main(opts Options) {
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "version") {
+		fmt.Println(versionString())
+		return
+	}
+	a, err := New(opts)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	message, err := a.Start()
+	if err != nil {
+		fmt.Println(err)
+		_ = a.Stop()
+		os.Exit(1)
+	}
+	fmt.Println(message)
+	fmt.Println("Application running. Press Ctrl+C to shutdown...")
+	a.Wait()
+	fmt.Println("Initiating graceful shutdown...")
+	if err := a.Stop(); err != nil {
+		fmt.Printf("Error during application stop: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Application shutdown complete")
+}

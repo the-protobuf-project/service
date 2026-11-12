@@ -55,16 +55,18 @@ func (NopDocumentsHooks) AfterDeleteDocument(ctx context.Context, name string) e
 // DocumentsServer serves archive.v1.Documents's AIP standard methods over the
 // generated repositories.
 //
-// Custom methods are answered by the embedded UnimplementedDocumentsServer
-// until you write them: embed *DocumentsServer in a type of your own and
-// define GetDocumentByHand, UndeleteDocument, ListPages, GetSettings on it. Define a standard method there too to
-// replace the generated one.
+// Its custom methods (GetDocumentByHand, UndeleteDocument, ListPages, GetSettings) run the DocumentsLogic given with WithLogic;
+// without one they answer UNIMPLEMENTED.
+//
+// To replace any method, generated or custom, embed *DocumentsServer in a
+// type of your own and define the method there.
 type DocumentsServer struct {
 	archivev1.UnimplementedDocumentsServer
 
 	repos DocumentsRepositories
 	hooks DocumentsHooks
 	opts  servicex.Options
+	logic DocumentsLogic
 }
 
 var _ archivev1.DocumentsServer = (*DocumentsServer)(nil)
@@ -89,6 +91,91 @@ func (s *DocumentsServer) Options() servicex.Options { return s.opts }
 
 // Repositories are the repositories the server persists through.
 func (s *DocumentsServer) Repositories() DocumentsRepositories { return s.repos }
+
+// DocumentsLogic is the business logic of archive.v1.Documents's custom
+// methods. The server runs each through Options().Run, traced and with its
+// error rendered by the translator, so an implementation returns plain errors:
+// a *problem.Problem, an error wrapping a registered sentinel, or a status.
+type DocumentsLogic interface {
+	GetDocumentByHand(ctx context.Context, req *archivev1.GetDocumentRequest) (*archivev1.Document, error)
+	UndeleteDocument(ctx context.Context, req *archivev1.UndeleteDocumentRequest) (*archivev1.Document, error)
+	ListPages(ctx context.Context, req *archivev1.ListPagesRequest) (*archivev1.ListPagesResponse, error)
+	GetSettings(ctx context.Context, req *archivev1.GetSettingsRequest) (*archivev1.Settings, error)
+}
+
+// WithLogic sets the implementation of the custom methods and returns s.
+func (s *DocumentsServer) WithLogic(l DocumentsLogic) *DocumentsServer {
+	s.logic = l
+	return s
+}
+
+// HasLogic reports whether s was given a DocumentsLogic, which an
+// assembly checks before it serves.
+func (s *DocumentsServer) HasLogic() bool { return s.logic != nil }
+
+// GetDocumentByHand runs the DocumentsLogic's GetDocumentByHand.
+func (s *DocumentsServer) GetDocumentByHand(ctx context.Context, req *archivev1.GetDocumentRequest) (*archivev1.Document, error) {
+	if s.logic == nil {
+		return s.UnimplementedDocumentsServer.GetDocumentByHand(ctx, req)
+	}
+	var out *archivev1.Document
+	err := s.opts.Run(ctx, "Documents", "GetDocumentByHand", func(ctx context.Context) (err error) {
+		out, err = s.logic.GetDocumentByHand(ctx, req)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// UndeleteDocument runs the DocumentsLogic's UndeleteDocument.
+func (s *DocumentsServer) UndeleteDocument(ctx context.Context, req *archivev1.UndeleteDocumentRequest) (*archivev1.Document, error) {
+	if s.logic == nil {
+		return s.UnimplementedDocumentsServer.UndeleteDocument(ctx, req)
+	}
+	var out *archivev1.Document
+	err := s.opts.Run(ctx, "Documents", "UndeleteDocument", func(ctx context.Context) (err error) {
+		out, err = s.logic.UndeleteDocument(ctx, req)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ListPages runs the DocumentsLogic's ListPages.
+func (s *DocumentsServer) ListPages(ctx context.Context, req *archivev1.ListPagesRequest) (*archivev1.ListPagesResponse, error) {
+	if s.logic == nil {
+		return s.UnimplementedDocumentsServer.ListPages(ctx, req)
+	}
+	var out *archivev1.ListPagesResponse
+	err := s.opts.Run(ctx, "Documents", "ListPages", func(ctx context.Context) (err error) {
+		out, err = s.logic.ListPages(ctx, req)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetSettings runs the DocumentsLogic's GetSettings.
+func (s *DocumentsServer) GetSettings(ctx context.Context, req *archivev1.GetSettingsRequest) (*archivev1.Settings, error) {
+	if s.logic == nil {
+		return s.UnimplementedDocumentsServer.GetSettings(ctx, req)
+	}
+	var out *archivev1.Settings
+	err := s.opts.Run(ctx, "Documents", "GetSettings", func(ctx context.Context) (err error) {
+		out, err = s.logic.GetSettings(ctx, req)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
 
 const documentsDocumentType = "archive.example/Document"
 

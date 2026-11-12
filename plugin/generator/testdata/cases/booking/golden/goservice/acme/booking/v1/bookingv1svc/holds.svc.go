@@ -70,16 +70,18 @@ func (NopHoldsHooks) AfterCreateHold(ctx context.Context, m *bookingv1.Hold) err
 // HoldsServer serves acme.booking.v1.Holds's AIP standard methods over the
 // generated repositories.
 //
-// Custom methods are answered by the embedded UnimplementedHoldsServer
-// until you write them: embed *HoldsServer in a type of your own and
-// define ReleaseHold on it. Define a standard method there too to
-// replace the generated one.
+// Its custom methods (ReleaseHold) run the HoldsLogic given with WithLogic;
+// without one they answer UNIMPLEMENTED.
+//
+// To replace any method, generated or custom, embed *HoldsServer in a
+// type of your own and define the method there.
 type HoldsServer struct {
 	bookingv1.UnimplementedHoldsServer
 
 	repos HoldsRepositories
 	hooks HoldsHooks
 	opts  servicex.Options
+	logic HoldsLogic
 }
 
 var _ bookingv1.HoldsServer = (*HoldsServer)(nil)
@@ -104,6 +106,40 @@ func (s *HoldsServer) Options() servicex.Options { return s.opts }
 
 // Repositories are the repositories the server persists through.
 func (s *HoldsServer) Repositories() HoldsRepositories { return s.repos }
+
+// HoldsLogic is the business logic of acme.booking.v1.Holds's custom
+// methods. The server runs each through Options().Run, traced and with its
+// error rendered by the translator, so an implementation returns plain errors:
+// a *problem.Problem, an error wrapping a registered sentinel, or a status.
+type HoldsLogic interface {
+	ReleaseHold(ctx context.Context, req *bookingv1.ReleaseHoldRequest) (*bookingv1.Hold, error)
+}
+
+// WithLogic sets the implementation of the custom methods and returns s.
+func (s *HoldsServer) WithLogic(l HoldsLogic) *HoldsServer {
+	s.logic = l
+	return s
+}
+
+// HasLogic reports whether s was given a HoldsLogic, which an
+// assembly checks before it serves.
+func (s *HoldsServer) HasLogic() bool { return s.logic != nil }
+
+// ReleaseHold runs the HoldsLogic's ReleaseHold.
+func (s *HoldsServer) ReleaseHold(ctx context.Context, req *bookingv1.ReleaseHoldRequest) (*bookingv1.Hold, error) {
+	if s.logic == nil {
+		return s.UnimplementedHoldsServer.ReleaseHold(ctx, req)
+	}
+	var out *bookingv1.Hold
+	err := s.opts.Run(ctx, "Holds", "ReleaseHold", func(ctx context.Context) (err error) {
+		out, err = s.logic.ReleaseHold(ctx, req)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
 
 const holdsHoldType = "booking.acme.example/Hold"
 

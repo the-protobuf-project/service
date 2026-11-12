@@ -103,6 +103,16 @@ func Build(p *protogen.Plugin, ir *protokit.IR, o Options) (*Model, error) {
 	sort.Slice(b.model.Packages, func(i, j int) bool {
 		return b.model.Packages[i].ProtoPackage < b.model.Packages[j].ProtoPackage
 	})
+	seen := map[string]bool{}
+	for _, ref := range repos {
+		if !seen[ref.pkg.Path] {
+			seen[ref.pkg.Path] = true
+			b.model.Repositories = append(b.model.Repositories, ref.pkg)
+		}
+	}
+	sort.Slice(b.model.Repositories, func(i, j int) bool {
+		return b.model.Repositories[i].Path < b.model.Repositories[j].Path
+	})
 	return b.model, nil
 }
 

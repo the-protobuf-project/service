@@ -1,0 +1,34 @@
+{{ .Banner }}
+
+# Telemetry configuration for {{ .Name }}.
+#
+# Embedded in the binary; holds defaults. What varies per deployment -- the
+# OTLP collector endpoint, the environment, the site labels -- comes from
+# {{ .Env }} environment variables (see telemetry.go), so one binary serves
+# every deployment without a rebuild.
+
+[service]
+name = "{{ .Name }}"
+version = "0.1.0"
+environment = "development"
+description = "{{ .Title }}"
+
+[telemetry]
+enabled = true
+
+# The OpenTelemetry collector. In deployment set {{ .Env }}OTLP_ENDPOINT=host:port.
+[telemetry.otlp]
+enabled = true
+endpoint = "localhost:6009"
+use_http = true
+
+[telemetry.metrics]
+export_interval_seconds = 5
+
+[tracing]
+enabled = true
+
+[logging.log]
+report_caller = true
+report_timestamp = true
+caller_offset = 1

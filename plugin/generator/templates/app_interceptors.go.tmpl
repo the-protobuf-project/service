@@ -1,0 +1,38 @@
+{{ .Banner }}
+
+package server
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+// Interceptors are the unary interceptors every call passes through after
+// request validation (protovalidate, which runtime-go puts first): hints
+// rewrites the generic errors anything after it returns into ones naming what
+// to do{{ if .Idem }}; then request_id (AIP-155) is honoured on every RPC that
+// declares it, so a request that was never going to be served cannot claim an
+// idempotency key{{ end }}. The server and a test's bufconn server run this one
+// list.
+func (s *Services) Interceptors() []grpc.UnaryServerInterceptor {
+	return []grpc.UnaryServerInterceptor{
+		hints.New(hints.Options{Product: "{{ .Title }}"}).Interceptor(),
+{{- if .Idem }}
+		idempotencyInterceptor(s.Repos),
+{{- end }}
+	}
+}
+{{- if .Idem }}
+
+// idempotencyInterceptor keeps request_id claims through the generated
+// idempotency key repository.
+func idempotencyInterceptor(r Repositories) grpc.UnaryServerInterceptor {
+	return idempotency.Interceptor({{ .Idem.Store }}, idempotency.Options{
+		Domain: {{ quote .Domain }},
+		// A claim that failed for a reason no key explains is the store's
+		// own error, mapped as the repositories map it.
+		CreateError: func(err error) error { return repox.MapGormErr(err) },
+	})
+}
+{{- end }}

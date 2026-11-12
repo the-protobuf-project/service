@@ -254,10 +254,19 @@ func (s *OrganizationsServer) UpdateOrganization(ctx context.Context, req *direc
 		if err != nil {
 			return err
 		}
+		// AIP-203: a REQUIRED field the mask writes must be set, or the
+		// update would clear it.
+		if err := servicex.Required(in, "organization", servicex.Selected(paths, organizationsOrganizationRequired)); err != nil {
+			return err
+		}
 		if servicex.TouchesAny(paths, organizationsOrganizationImmutable) || req.GetAllowMissing() || req.GetValidateOnly() {
 			existing, err := s.repos.Organizations.Get(ctx, name)
 			if req.GetAllowMissing() && servicex.IsNotFound(err) {
-				// AIP-134 allow_missing: an update of nothing creates it.
+				// AIP-134 allow_missing: an update of nothing creates it,
+				// under the id the name chooses, held to Create's rule.
+				if err := servicex.CheckID("organization.name", servicex.IDOf(name)); err != nil {
+					return err
+				}
 				out, err = s.createOrganization(ctx, servicex.ParentOf(name), name, proto.Clone(in).(*directoryv1.Organization), req.GetValidateOnly())
 				return err
 			}

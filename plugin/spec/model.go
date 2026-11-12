@@ -38,6 +38,10 @@ func (k Kind) String() string { return kindNames[k] }
 // Model is everything one plugin run generates.
 type Model struct {
 	Packages []*Package
+	// Repositories are every repository package protoc-gen-store wrote for
+	// the run, by import path: what an application opens on one connection,
+	// whether or not a generated server persists through it.
+	Repositories []GoPkg
 	// Warnings are methods that look standard but could not be generated,
 	// with the reason; the plugin prints them and leaves those methods to
 	// the consumer.

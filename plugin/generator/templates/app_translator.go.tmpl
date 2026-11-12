@@ -1,0 +1,52 @@
+{{ .Banner }}
+
+package server
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+// Traced runs fn in a span of the process's pipeline, with the request
+// counters and outcome logs runtime-go's observer records; without a
+// pipeline it runs fn as it is. It is every generated server's tracer.
+func Traced(ctx context.Context, service, method string, fn func(context.Context) error) error {
+	t := telemetry.Telemetry
+	if t == nil {
+		return fn(ctx)
+	}
+	return grpc.NewObserver(t).Traced(ctx, service, method, fn)
+}
+
+// Kinds are the sentinels of every package's error reasons, so an error
+// wrapping any of them -- from whichever server's hook or logic -- renders
+// with its code and reason.
+func Kinds() []problem.Kind {
+	var out []problem.Kind
+{{- range .Errors }}
+	out = append(out, {{ . }}.Kinds()...)
+{{- end }}
+	return out
+}
+
+// Reasons are every package's declared reasons.
+func Reasons() []problem.Reason {
+	var out []problem.Reason
+{{- range .Errors }}
+	out = append(out, {{ . }}.Reasons()...)
+{{- end }}
+	return out
+}
+
+// Translator is the problem.Translator of a server whose ErrorInfo domain is
+// domain: the generated servers' reasons and every package's.
+func Translator(domain string) *problem.Translator {
+	return servicex.NewTranslator(domain, Kinds()...).Declare(Reasons()...)
+}
+
+// ServerOptions are the options every generated server takes: the translator
+// of its domain and the tracer.
+func ServerOptions(domain string) []servicex.Option {
+	return []servicex.Option{servicex.WithTranslator(Translator(domain)), servicex.WithTracer(Traced)}
+}

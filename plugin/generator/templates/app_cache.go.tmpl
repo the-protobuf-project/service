@@ -1,0 +1,51 @@
+{{ .Banner }}
+
+package database
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+// attachCache opens the cache when [cache] is enabled. A cache that cannot be
+// opened is logged and left off rather than failing startup: every read it
+// would have served is still correct from the database, only slower.
+func (c *Connection) attachCache(ctx context.Context) {
+	p, err := OpenCache(ctx)
+	if err != nil {
+		telemetry.Warn("The cache is off: it could not be opened", "error", err)
+		return
+	}
+	c.cacheProvider = p
+}
+
+// OpenCache builds the cache.Provider business logic and cache decorators
+// read through, or returns (nil, nil) when [cache] is not enabled.
+//
+// The backend lives here rather than in the protos on purpose: which server
+// serves a cache is deployment policy. Redis and Dragonfly are the same
+// driver behind RESP, so `address` may point at either.
+func OpenCache(ctx context.Context) (cache.Provider, error) {
+	cfg := config.Get().Cache
+	if !cfg.Enabled {
+		return nil, nil
+	}
+	client, err := redis.NewClient(ctx, redis.Config{
+		Address:  cfg.Address,
+		Username: cfg.Username,
+		Password: cfg.Password,
+		Database: cfg.Database,
+		PoolSize: cfg.PoolSize,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("open cache redis %q: %w", cfg.Address, err)
+	}
+	// DefaultTTL is left zero: every cached entry names its own ttl, and
+	// RequireTTL turns a forgotten one into an error at the first write
+	// instead of an entry that never expires.
+	return redis.New(client, cache.Config{
+		Prefix:     cfg.Prefix,
+		RequireTTL: true,
+	}), nil
+}

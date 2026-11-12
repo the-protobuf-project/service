@@ -1,0 +1,150 @@
+{{ .Banner }}
+
+package server
+
+// assembly.go builds {{ .Name }}'s servers on one connection, with what the
+// application provisioned, and runs their background work: the same servers
+// for the hybrid server and for a test's bufconn server, so the two cannot
+// drift.
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+// Services are {{ .Name }}'s servers, assembled on one connection, with the
+// Deps they were built over.
+type Services struct {
+	Deps
+{{ range .Services }}{{ if .Generated }}
+	// {{ .Field }} serves {{ .FullName }}.
+	{{ .Field }} *{{ .Pkg }}.{{ .GoName }}Server
+{{- end }}{{ end }}
+{{- if .Webhooks }}
+
+	// Dispatcher records every change of the feeds for the webhooks that
+	// want it, and delivers them ([webhooks]).
+	Dispatcher *events.Dispatcher
+{{- end }}
+{{- if .Purge }}
+
+	// Purger ends soft deletes once their retention passes ([retention]).
+	Purger *Purger
+{{- end }}
+
+	provision Provision
+	overrides Overrides
+}
+
+// New assembles every server over d with what p provisions, and refuses a
+// provision that leaves a method unanswered.
+func New(d *Deps, p Provision) (*Services, error) {
+	s := &Services{Deps: *d, provision: p}
+	r := d.Repos
+	_ = r
+{{- range .Services }}{{ if .Generated }}
+	s.{{ .Field }} = {{ .Pkg }}.New{{ .GoName }}Server({{ .Repos }}, {{ if .Hooks }}p.Hooks.{{ .Field }}{{ else }}nil{{ end }}, append(ServerOptions({{ quote .Domain }}), p.ServerOptions...)...)
+{{- if .Logic }}
+	if p.Logic.{{ .Field }} != nil {
+		s.{{ .Field }}.WithLogic(p.Logic.{{ .Field }})
+	}
+{{- end }}
+{{- end }}{{ end }}
+{{- if .Webhooks }}
+	hooks := d.Config.Webhooks
+	var previous []string
+	for k := range strings.SplitSeq(hooks.PreviousSecretKeys, ",") {
+		if k = strings.TrimSpace(k); k != "" {
+			previous = append(previous, k)
+		}
+	}
+	sealer, err := events.NewSealer(hooks.SecretKey, previous)
+	if err != nil {
+		return nil, fmt.Errorf("server: webhooks.secret_key: %w", err)
+	}
+	if sealer == nil && d.Config.Server.Environment == "production" {
+		telemetry.Warn("Webhook signing secrets are stored unsealed: set {{ .Env }}WEBHOOKS__SECRET_KEY to the output of `openssl rand -base64 32`")
+	}
+	s.Dispatcher = events.NewDispatcher({{ .Webhooks.Store }}, []events.Feed{
+{{- range .Feeds }}
+		{{ . }},
+{{- end }}
+	}, events.Options{
+		Source:               hooks.Source,
+		UserAgent:            "{{ .Name }}-webhooks/1.0",
+		MetricPrefix:         "{{ .Name }}.webhook",
+		AllowPrivateNetworks: hooks.AllowPrivateNetworks,
+		Retention:            hooks.Retention(),
+		MaxAttempts:          hooks.MaxAttempts,
+		Sealer:               sealer,
+		Meter:                telemetry.Meter(),
+	})
+{{- end }}
+{{- if .Purge }}
+	s.Purger = NewPurger(r, d.Config.Retention.Period(), telemetry.Meter())
+{{- end }}
+	if p.Override != nil {
+		s.overrides = p.Override(s)
+	}
+	if err := s.check(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// Start launches the background work the configuration enables, tied to
+// ctx: {{ if .Webhooks }}webhook delivery, {{ end }}{{ if .Purge }}the purger, {{ end }}the pool monitor, and every
+// Extension's own. The goroutines exit when ctx is cancelled.
+func (s *Services) Start(ctx context.Context) {
+	report := func(task string) func(error) {
+		return func(err error) { telemetry.Error(task+" failed", "error", err) }
+	}
+	_ = report
+{{- if .Webhooks }}
+	if s.Config.Webhooks.Enabled {
+		s.Dispatcher.Start(ctx, s.Config.Webhooks.Interval(), report("webhook delivery"))
+	}
+{{- end }}
+{{- if .Purge }}
+	if s.Config.Retention.Purge {
+		s.Purger.Start(ctx, s.Config.Retention.Interval(), report("soft-delete purger"))
+	}
+{{- end }}
+	database.StartPoolMonitor(ctx, s.Conn, 0)
+	for _, e := range s.provision.Extensions {
+		e.Start(ctx, s)
+	}
+}
+
+// Close runs every Extension's Close, then closes the connection.
+func (s *Services) Close(ctx context.Context) error {
+	var errs []error
+	for _, e := range s.provision.Extensions {
+		errs = append(errs, e.Close(ctx))
+	}
+	errs = append(errs, s.Conn.Close())
+	return errors.Join(errs...)
+}
+
+// newServices opens the configured database (unless conn is given), builds
+// the Deps, asks provider for the Provision, and assembles the servers.
+func newServices(conn *database.Connection, provider Provider) (*Services, error) {
+	cfg := config.Get()
+	if conn == nil {
+		opened, err := database.Open()
+		if err != nil {
+			return nil, err
+		}
+		conn = opened
+	}
+	d := &Deps{Config: cfg, Conn: conn, Repos: NewRepositories(conn.Repox())}
+	var p Provision
+	if provider != nil {
+		var err error
+		if p, err = provider(d); err != nil {
+			return nil, errProvider(err)
+		}
+	}
+	return New(d, p)
+}

@@ -1,0 +1,108 @@
+{{ .Banner }}
+
+# Production configuration for {{ .Name }}.
+#
+# Compiled into the binary via //go:embed (see config.go). Holds
+# production-safe, non-secret topology only -- secrets (passwords, keys) are
+# left blank here and injected at deploy time through {{ .Env }} environment
+# variables. Sections of the application's own go in config.Layers.Release.
+
+[app]
+name = "{{ .Name }}"
+version = "v0.1.0"
+description = "{{ .Title }}"
+
+[server]
+# environment: "development", "debug", "staging", or "production".
+environment = "production"
+enable_http = true
+enable_health = true
+enable_mcp = true
+experimental_http3 = false
+# How long a stop waits for in-flight requests (HTTP gateways drain first, then
+# gRPC). 0 = the runtime's default, 20 s.
+shutdown_timeout_seconds = 20
+
+[server.grpc]
+host = "0.0.0.0"
+port = 50051
+
+[server.http]
+host = "0.0.0.0"
+port = 8080
+
+[server.mcp]
+host = "0.0.0.0"
+port = 8081
+# transport: "stdio", "streamable-http", or "sse".
+transport = "streamable-http"
+# The one MCP endpoint serving every service's tools ("/mcp" when empty).
+path = "/mcp"
+# Serve streamable HTTP without sessions, so any replica behind a load
+# balancer answers any request.
+stateless = true
+
+[server.cors]
+enabled = false
+allowed_origins = []
+allowed_methods = []
+allowed_headers = []
+exposed_headers = []
+allow_credentials = false
+max_age_seconds = 600
+
+[server.tls]
+# Required when experimental_http3 = true. Provide the PEM cert/key at deploy time.
+cert_file = ""
+key_file = ""
+
+[database.postgres]
+host = "127.0.0.1"
+port = 5432
+user = "postgres"
+password = ""
+dbname = "{{ .Name }}"
+sslmode = "require"
+timezone = "UTC"
+# Connection-pool bounds; the pool is the process's backpressure point.
+max_open_conns = 25
+max_idle_conns = 25
+conn_max_lifetime_minutes = 30
+conn_max_idle_minutes = 5
+plan_cache_mode = "force_custom_plan"
+
+# The cache business logic reads through (Deps.Cache): Redis or Dragonfly.
+# Off by default; the service is correct without it.
+[cache]
+enabled = false
+address = "127.0.0.1:6379"
+username = ""
+password = ""
+database = 0
+pool_size = 0
+# Separates this deployment's keys from another sharing one server.
+prefix = "{{ .Name }}"
+{{- if .Webhooks }}
+
+[webhooks]
+# Webhook delivery of the change feeds. Endpoints must be public.
+enabled = true
+source = "{{ .EventSource }}"
+interval_seconds = 5
+max_attempts = 8
+allow_private_networks = false
+retention_days = 30
+# Seals signing secrets at rest. Set {{ .Env }}WEBHOOKS__SECRET_KEY to the
+# output of `openssl rand -base64 32`; empty stores them unsealed.
+secret_key = ""
+previous_secret_keys = ""
+{{- end }}
+{{- if .Purge }}
+
+[retention]
+# Soft-deleted records are purged for good this many days after deletion;
+# until then Undelete restores them.
+purge = true
+deleted_days = 30
+interval_minutes = 60
+{{- end }}

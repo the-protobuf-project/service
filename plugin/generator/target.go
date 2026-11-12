@@ -51,6 +51,10 @@ type Settings struct {
 	// ErrorDomain overrides the ErrorInfo domain otherwise taken from each
 	// service's google.api.default_host.
 	ErrorDomain string
+	// App, when set, also renders the application shell of that name (see
+	// app.go): configuration, telemetry, database, assembly, registration
+	// and the command that serves them.
+	App string
 }
 
 // Target is the goservice target.
@@ -129,9 +133,10 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 	for _, pkg := range model.Packages {
 		sources := packageSources(pkg)
 		for _, svc := range pkg.Services {
-			if !svc.Standard() {
-				// Nothing to generate: every method is custom. The service
-				// is still registered (Servers takes any implementation).
+			if !svc.Standard() && !hasLogic(svc) {
+				// Nothing to generate: every method is custom and streaming.
+				// The service is still registered (Servers takes any
+				// implementation).
 				continue
 			}
 			view, err := serviceFileView(pkg, svc, servicex, s.RepositoryModule)
@@ -156,6 +161,9 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 		if err := t.extras(p, pkg, servicex, sources); err != nil {
 			return err
 		}
+	}
+	if s.App != "" {
+		return t.renderApp(p, model, servicex)
 	}
 	return nil
 }
@@ -273,3 +281,14 @@ var standardReasons = []*spec.ErrorReason{
 
 // PackageSources returns the sorted source files contributing to a package.
 func PackageSources(pkg *spec.Package) []string { return packageSources(pkg) }
+
+// hasLogic reports whether svc has a unary custom method, which its
+// generated server delegates to a Logic.
+func hasLogic(svc *spec.Service) bool {
+	for _, m := range svc.Methods {
+		if m.Kind == spec.Custom && !m.Proto.Desc.IsStreamingClient() && !m.Proto.Desc.IsStreamingServer() {
+			return true
+		}
+	}
+	return false
+}

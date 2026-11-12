@@ -71,6 +71,7 @@ plugins:
 | `gateway`, `mcp` | `true` | Register REST and MCP. |
 | `error_domain` | `google.api.default_host` | ErrorInfo domain of the generated servers. |
 | `package_suffix` | `svc` | |
+| `app` | | Also generate the application shell of this name (below). |
 
 `bindings` places the bindings per proto package, for a module whose stubs
 live elsewhere (the BSR's `…/grpc/go/…/<pkg>grpc` layout, standalone gateway):
@@ -158,6 +159,44 @@ Adapter roles and their conventional fields (rename with `fields`):
 | `ROLE_IDEMPOTENCY_KEY` | **method, request_id, state** (`*_IN_FLIGHT/_DONE`), **response**, create_time |
 
 Extension numbers 53000-53006.
+
+### The application shell
+
+`app=<name>` also generates everything a service built over these servers
+otherwise writes by hand, so that a project starts with only its business
+logic to write. It never generates that logic: it provisions a typed slot
+for each piece and wires whatever fills it.
+
+| Package | What |
+|---|---|
+| `app/config` | `AppConfig` with only the sections the run uses (`[server]`, `[database.postgres]`, `[cache]`, `[webhooks]` with a webhook store, `[retention]` with soft-deletable resources), validated; the embedded `<name>.release.toml`, the `<name>.dev.toml` profile (from the working directory, or embedded with `<NAME>_PROFILE=dev`), then `<NAME>_SECTION__KEY` environment variables; `Layers` and `Section` for the application's own sections. |
+| `app/telemetry` | The process pipeline (OTLP from `<NAME>_OTLP_ENDPOINT`), the logging helpers, `Meter`. |
+| `app/database` | The shared `Connection`: Postgres with pool bounds, error translation and a quiet logger, the pool monitor, the cache provider, and `Observe` for anything that must hear every write. |
+| `app/server` | `Repositories` (every repository of the run on one connection); `Translator`/`ServerOptions` (every package's error kinds, each server keeping its own domain, and the tracer); `New` (every server, with what the `Provision` gives); `Interceptors` (hints, then idempotency with an idempotency-key store); `Options`/`Register` (every package's `RegisterAll`); the hybrid server with TLS, CORS, MCP and shutdown from config; background work (webhook delivery, the soft-delete purger, the pool monitor); `NewGRPCServer` for a bufconn test. |
+| `app`, `cmd/<name>` | `App` and `Main`; the command is one line. |
+| `errors.md` | The error reference of every package, in one document. |
+
+What an application provisions, over `Deps` (config, connection, repositories):
+
+```go
+func provision(d *server.Deps) (server.Provision, error) {
+	return server.Provision{
+		Hooks: server.Hooks{Organizations: orgHooks{repos: d.Repos}},  // around standard methods
+		Logic: server.Logic{Calendars: freeBusy{repos: d.Repos}},       // custom methods: required
+		Override: func(s *server.Services) server.Overrides { ... },     // replace any server
+		Options:    []grpc.Option{grpc.WithUnaryInterceptors(auth)},     // the hybrid server
+		Extensions: []server.Extension{caldav},                          // mounts, background, cleanup
+	}, nil
+}
+
+func main() { app.Main(app.Options{Provider: provision}) }
+```
+
+Every unary custom method is a method of a generated `<S>Logic` interface,
+run through the server's tracer and translator. A custom method with no
+`Logic` (and no override) stops the assembly at startup with the list of what
+is missing; the generated `cmd/<name>` is a skeleton and opts out with
+`Provision{Unimplemented: true}`, serving those as UNIMPLEMENTED.
 
 ## Rust services
 

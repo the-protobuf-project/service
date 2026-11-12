@@ -38,12 +38,15 @@ func (Nop{{ $s.GoName }}Hooks) {{ .Name }}({{ .Params }}) error { return nil }
 {{ end }}
 // {{ .GoName }}Server serves {{ .FullName }}'s AIP standard methods over the
 // generated repositories.
+{{- if .Logic }}
+//
+// Its custom methods ({{ range $i, $m := .Logic }}{{ if $i }}, {{ end }}{{ $m.GoName }}{{ end }}) run the {{ .GoName }}Logic given with WithLogic;
+// without one they answer UNIMPLEMENTED.
+{{- end }}
 {{- if .Custom }}
 //
-// Custom methods are answered by the embedded Unimplemented{{ .GoName }}Server
-// until you write them: embed *{{ .GoName }}Server in a type of your own and
-// define {{ range $i, $m := .Custom }}{{ if $i }}, {{ end }}{{ $m }}{{ end }} on it. Define a standard method there too to
-// replace the generated one.
+// To replace any method, generated or custom, embed *{{ .GoName }}Server in a
+// type of your own and define the method there.
 {{- end }}
 type {{ .GoName }}Server struct {
 	{{ .Grpc }}.Unimplemented{{ .GoName }}Server
@@ -51,6 +54,9 @@ type {{ .GoName }}Server struct {
 	repos {{ .GoName }}Repositories
 	hooks {{ .GoName }}Hooks
 	opts  servicex.Options
+{{- if .Logic }}
+	logic {{ .GoName }}Logic
+{{- end }}
 }
 
 var _ {{ .Grpc }}.{{ .GoName }}Server = (*{{ .GoName }}Server)(nil)
@@ -75,6 +81,46 @@ func (s *{{ .GoName }}Server) Options() servicex.Options { return s.opts }
 
 // Repositories are the repositories the server persists through.
 func (s *{{ .GoName }}Server) Repositories() {{ .GoName }}Repositories { return s.repos }
+{{- if .Logic }}
+
+// {{ .GoName }}Logic is the business logic of {{ .FullName }}'s custom
+// methods. The server runs each through Options().Run, traced and with its
+// error rendered by the translator, so an implementation returns plain errors:
+// a *problem.Problem, an error wrapping a registered sentinel, or a status.
+type {{ .GoName }}Logic interface {
+{{- range .Logic }}
+	{{ .GoName }}(ctx context.Context, req *{{ .Req }}) (*{{ .Resp }}, error)
+{{- end }}
+}
+
+// WithLogic sets the implementation of the custom methods and returns s.
+func (s *{{ .GoName }}Server) WithLogic(l {{ .GoName }}Logic) *{{ .GoName }}Server {
+	s.logic = l
+	return s
+}
+
+// HasLogic reports whether s was given a {{ .GoName }}Logic, which an
+// assembly checks before it serves.
+func (s *{{ .GoName }}Server) HasLogic() bool { return s.logic != nil }
+{{- range .Logic }}
+
+// {{ .GoName }} runs the {{ $s.GoName }}Logic's {{ .GoName }}.
+func (s *{{ $s.GoName }}Server) {{ .GoName }}(ctx context.Context, req *{{ .Req }}) (*{{ .Resp }}, error) {
+	if s.logic == nil {
+		return s.Unimplemented{{ $s.GoName }}Server.{{ .GoName }}(ctx, req)
+	}
+	var out *{{ .Resp }}
+	err := s.opts.Run(ctx, {{ quote $s.GoName }}, {{ quote .GoName }}, func(ctx context.Context) (err error) {
+		out, err = s.logic.{{ .GoName }}(ctx, req)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+{{- end }}
+{{- end }}
 {{ range .Resources }}{{ template "resource" (dict "S" $s "R" .) }}{{ end }}
 {{- range .Methods }}{{ $v := dict "S" $s "M" . "R" .R }}{{ if eq .Kind "Get" }}{{ template "methodGet" $v }}{{ else if eq .Kind "List" }}{{ template "methodList" $v }}{{ else if eq .Kind "Create" }}{{ template "methodCreate" $v }}{{ else if eq .Kind "Update" }}{{ template "methodUpdate" $v }}{{ else if eq .Kind "Delete" }}{{ template "methodDelete" $v }}{{ else if eq .Kind "Undelete" }}{{ template "methodUndelete" $v }}{{ else if eq .Kind "Purge" }}{{ template "methodPurge" $v }}{{ end }}{{ end }}
 {{- end }}
@@ -256,12 +302,21 @@ func (s *{{ $s.GoName }}Server) {{ $m.GoName }}(ctx context.Context, req *{{ $m.
 		if err != nil {
 			return err
 		}
+		// AIP-203: a REQUIRED field the mask writes must be set, or the
+		// update would clear it.
+		if err := servicex.Required(in, {{ quote $m.BodyField }}, servicex.Selected(paths, {{ $r.Var }}Required)); err != nil {
+			return err
+		}
 {{- if or $r.HasImmut $m.AllowMissing $m.ValidateOnly }}
 		if {{ if $r.HasImmut }}servicex.TouchesAny(paths, {{ $r.Var }}Immutable){{ else }}false{{ end }}{{ if $m.AllowMissing }} || req.{{ $m.AllowMissing }}{{ end }}{{ if $m.ValidateOnly }} || req.{{ $m.ValidateOnly }}{{ end }} {
 			existing, err := s.repos.{{ $r.Field }}.Get(ctx, name)
 {{- if $m.AllowMissing }}
 			if req.{{ $m.AllowMissing }} && servicex.IsNotFound(err) {
-				// AIP-134 allow_missing: an update of nothing creates it.
+				// AIP-134 allow_missing: an update of nothing creates it,
+				// under the id the name chooses, held to Create's rule.
+				if err := servicex.CheckID("{{ $m.BodyField }}.name", servicex.IDOf(name)); err != nil {
+					return err
+				}
 				out, err = s.create{{ $r.GoName }}(ctx, servicex.ParentOf(name), name, proto.Clone(in).(*{{ $r.PB }}), {{ if $m.ValidateOnly }}req.{{ $m.ValidateOnly }}{{ else }}false{{ end }})
 				return err
 			}

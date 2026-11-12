@@ -96,16 +96,18 @@ func (NopCalendarsHooks) BeforeUndeleteCalendar(ctx context.Context, name string
 // CalendarsServer serves acme.calendar.v1.Calendars's AIP standard methods over the
 // generated repositories.
 //
-// Custom methods are answered by the embedded UnimplementedCalendarsServer
-// until you write them: embed *CalendarsServer in a type of your own and
-// define QueryFreeBusy on it. Define a standard method there too to
-// replace the generated one.
+// Its custom methods (QueryFreeBusy) run the CalendarsLogic given with WithLogic;
+// without one they answer UNIMPLEMENTED.
+//
+// To replace any method, generated or custom, embed *CalendarsServer in a
+// type of your own and define the method there.
 type CalendarsServer struct {
 	calendarv1.UnimplementedCalendarsServer
 
 	repos CalendarsRepositories
 	hooks CalendarsHooks
 	opts  servicex.Options
+	logic CalendarsLogic
 }
 
 var _ calendarv1.CalendarsServer = (*CalendarsServer)(nil)
@@ -130,6 +132,40 @@ func (s *CalendarsServer) Options() servicex.Options { return s.opts }
 
 // Repositories are the repositories the server persists through.
 func (s *CalendarsServer) Repositories() CalendarsRepositories { return s.repos }
+
+// CalendarsLogic is the business logic of acme.calendar.v1.Calendars's custom
+// methods. The server runs each through Options().Run, traced and with its
+// error rendered by the translator, so an implementation returns plain errors:
+// a *problem.Problem, an error wrapping a registered sentinel, or a status.
+type CalendarsLogic interface {
+	QueryFreeBusy(ctx context.Context, req *calendarv1.QueryFreeBusyRequest) (*calendarv1.QueryFreeBusyResponse, error)
+}
+
+// WithLogic sets the implementation of the custom methods and returns s.
+func (s *CalendarsServer) WithLogic(l CalendarsLogic) *CalendarsServer {
+	s.logic = l
+	return s
+}
+
+// HasLogic reports whether s was given a CalendarsLogic, which an
+// assembly checks before it serves.
+func (s *CalendarsServer) HasLogic() bool { return s.logic != nil }
+
+// QueryFreeBusy runs the CalendarsLogic's QueryFreeBusy.
+func (s *CalendarsServer) QueryFreeBusy(ctx context.Context, req *calendarv1.QueryFreeBusyRequest) (*calendarv1.QueryFreeBusyResponse, error) {
+	if s.logic == nil {
+		return s.UnimplementedCalendarsServer.QueryFreeBusy(ctx, req)
+	}
+	var out *calendarv1.QueryFreeBusyResponse
+	err := s.opts.Run(ctx, "Calendars", "QueryFreeBusy", func(ctx context.Context) (err error) {
+		out, err = s.logic.QueryFreeBusy(ctx, req)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
 
 const calendarsCalendarType = "calendar.acme.example/Calendar"
 
@@ -252,6 +288,11 @@ func (s *CalendarsServer) UpdateCalendar(ctx context.Context, req *calendarv1.Up
 		}
 		paths, err := servicex.UpdatePaths(in, req.GetUpdateMask(), "calendar", calendarsCalendarOutputOnly)
 		if err != nil {
+			return err
+		}
+		// AIP-203: a REQUIRED field the mask writes must be set, or the
+		// update would clear it.
+		if err := servicex.Required(in, "calendar", servicex.Selected(paths, calendarsCalendarRequired)); err != nil {
 			return err
 		}
 		if err := s.hooks.ValidateCalendar(ctx, servicex.OpUpdate, in, paths); err != nil {

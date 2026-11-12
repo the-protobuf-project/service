@@ -1,0 +1,126 @@
+{{ .Banner }}
+
+package server
+
+// provision.go is everything an application hands the generated layer: the
+// shell never decides behaviour, it provisions a typed slot for each piece and
+// wires whatever fills it. Hooks run around the standard methods, Logic is the
+// custom methods, Overrides replace any server outright, ServerOptions and
+// Options reach every server and the hybrid server, and Extensions add
+// mounts, background work and cleanup.
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+// Deps are what business logic is built over: the configuration, the shared
+// connection (its cache, its change observers) and every repository of the
+// run. A Provider receives them before any server exists.
+type Deps struct {
+	Config *config.AppConfig
+	Conn   *database.Connection
+	Repos  Repositories
+}
+
+// Hooks are the business logic around each service's standard methods; a nil
+// one runs none (its Nop hooks).
+type Hooks struct {
+{{- range .Services }}{{ if .Hooks }}
+	{{ .Field }} {{ .Pkg }}.{{ .GoName }}Hooks
+{{- end }}{{ end }}
+}
+
+// Logic are the implementations of each service's custom methods. Every one
+// is required: the assembly refuses to start without it, unless Overrides
+// replaces that service.
+type Logic struct {
+{{- range .Services }}{{ if .Logic }}
+	{{ .Field }} {{ .Pkg }}.{{ .GoName }}Logic
+{{- end }}{{ end }}
+}
+
+// Overrides replace a service's registered server with one of the
+// application's own: typically a type embedding the generated server (from
+// Services) that redefines a method. A service with no generated server
+// (every method custom and streaming) must be given here.
+type Overrides struct {
+{{- range .Services }}
+	{{ .Field }} {{ .Grpc }}.{{ .GoName }}Server
+{{- end }}
+}
+
+// Extension is a piece of the application the shell runs beside the
+// servers: HTTP mounts and extra registrations (Options), background work
+// (Start, tied to the server's lifetime) and cleanup (Close).
+type Extension interface {
+	Options(s *Services) []grpc.Option
+	Start(ctx context.Context, s *Services)
+	Close(ctx context.Context) error
+}
+
+// Provision is what an application provisions. The zero value serves the
+// generated standard methods with no business logic, and refuses to start if
+// a service has custom methods.
+type Provision struct {
+	Hooks Hooks
+	Logic Logic
+	// Override, when set, is called once the servers are assembled and may
+	// replace any of them.
+	Override func(s *Services) Overrides
+	// ServerOptions reach every generated server after the shell's own (the
+	// translator and tracer), and may replace them.
+	ServerOptions []servicex.Option
+	// Options reach the hybrid server: interceptors, gateways, mounts.
+	Options    []grpc.Option
+	Extensions []Extension
+	// Unimplemented serves a custom method that has no Logic as UNIMPLEMENTED
+	// instead of refusing to start, and logs each one: for a skeleton that
+	// has yet to write its logic, never for a release.
+	Unimplemented bool
+}
+
+// Provider builds the application's Provision over d.
+type Provider func(d *Deps) (Provision, error)
+
+// check refuses a provision that leaves a method with nothing to answer it.
+func (s *Services) check() error {
+	var missing []string
+{{- range .Services }}
+{{- if not .Generated }}
+	if s.overrides.{{ .Field }} == nil {
+		missing = append(missing, "{{ .FullName }}: no generated server; give one in Overrides.{{ .Field }}")
+	}
+{{- else if .Logic }}
+	if !s.{{ .Field }}.HasLogic() && s.overrides.{{ .Field }} == nil {
+		missing = append(missing, "{{ .FullName }}: {{ if eq (len .Logic) 1 }}custom method {{ index .Logic 0 }} has{{ else }}custom methods {{ range $i, $m := .Logic }}{{ if $i }}, {{ end }}{{ $m }}{{ end }} have{{ end }} no implementation; give one in Logic.{{ .Field }}")
+	}
+{{- end }}
+{{- end }}
+	if len(missing) == 0 {
+		return nil
+	}
+	if s.provision.Unimplemented {
+		for _, m := range missing {
+			telemetry.Warn("Serving UNIMPLEMENTED: " + m)
+		}
+		return nil
+	}
+	return errors.New("server: the provision is incomplete:\n  " + strings.Join(missing, "\n  "))
+}
+{{ range .Services }}
+// registered{{ .Field }} is the {{ .GoName }} server registered: the override, or the generated one.
+func (s *Services) registered{{ .Field }}() {{ .Grpc }}.{{ .GoName }}Server {
+	if s.overrides.{{ .Field }} != nil {
+		return s.overrides.{{ .Field }}
+	}
+{{- if .Generated }}
+	return s.{{ .Field }}
+{{- else }}
+	return nil
+{{- end }}
+}
+{{ end }}
+// errProvider wraps an error a Provider returned.
+func errProvider(err error) error { return fmt.Errorf("server: provision: %w", err) }

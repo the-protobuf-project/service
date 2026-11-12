@@ -1,0 +1,32 @@
+{{ .Banner }}
+
+// Package server is {{ .Name }}'s transport and bootstrap layer: it opens
+// every repository on one connection (repositories.go), assembles every
+// server over them with what the application provisions (provision.go,
+// assembly.go), puts them on the hybrid gRPC/HTTP/MCP server
+// (register.go, server.go), and runs their background work.
+package server
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+// Repositories are every repository of the run, opened on one connection:
+// the generated servers persist through them, and business logic reaches any
+// resource through them.
+type Repositories struct {
+{{- range .Repos }}
+	{{ .Field }} {{ .Pkg }}.Repositories
+{{- end }}
+}
+
+// NewRepositories opens every repository on conn.
+func NewRepositories(conn repox.Conn) Repositories {
+	return Repositories{
+{{- range .Repos }}
+		{{ .Field }}: {{ .Pkg }}.New(conn),
+{{- end }}
+	}
+}

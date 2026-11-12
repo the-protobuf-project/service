@@ -252,6 +252,11 @@ func (s *OrganizationalUnitsServer) UpdateOrganizationalUnit(ctx context.Context
 		if err != nil {
 			return err
 		}
+		// AIP-203: a REQUIRED field the mask writes must be set, or the
+		// update would clear it.
+		if err := servicex.Required(in, "organizational_unit", servicex.Selected(paths, organizationalUnitsOrganizationalUnitRequired)); err != nil {
+			return err
+		}
 		if err := s.hooks.ValidateOrganizationalUnit(ctx, servicex.OpUpdate, in, paths); err != nil {
 			return err
 		}

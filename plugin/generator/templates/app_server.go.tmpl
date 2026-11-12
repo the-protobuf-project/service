@@ -1,0 +1,148 @@
+{{ .Banner }}
+
+package server
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+// Server wraps a runtime HybridServer and provides lifecycle helpers
+// (Start, Stop, Wait) for {{ .Name }}.
+type Server struct {
+	// options holds the gRPC/HTTP/MCP configuration for this server.
+	options options.Options
+	// hybridServer is the running runtime server instance.
+	hybridServer *grpc.HybridServer
+	// svc are the assembled servers, retained so their background work can
+	// be started against the server's lifecycle context in Start.
+	svc *Services
+	// ctx and cancel control the server's lifecycle context.
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+// NewServer opens the configured database, assembles every server with what
+// provider provisions (nil provisions nothing), and builds the hybrid server
+// from the configuration. Call Start to begin serving.
+func NewServer(name, version string, provider Provider) (*Server, error) {
+	serverOpts := config.GetGRPCOptions()
+	serverOpts.ServiceName = name
+	serverOpts.Version = version
+
+	svc, err := newServices(nil, provider)
+	if err != nil {
+		return nil, fmt.Errorf("assemble services: %w", err)
+	}
+	opts, err := serviceOptions(svc)
+	if err != nil {
+		_ = svc.Close(context.Background())
+		return nil, err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Server{
+		options:      serverOpts,
+		hybridServer: grpc.NewHybridServer(serverOpts, opts...),
+		svc:          svc,
+		ctx:          ctx,
+		cancel:       cancel,
+	}, nil
+}
+
+// Services are the assembled servers.
+func (s *Server) Services() *Services { return s.svc }
+
+// serviceOptions builds the hybrid-server options: protovalidate request
+// validation (enforced by runtime-go across gRPC, the HTTP gateway, and every
+// MCP tool call), the interceptor chain, the registrations, plus, when
+// configured, CORS and TLS. The TLS pair is validated up front so a bad path
+// returns a clear error instead of the panic grpc.WithCertificates would raise.
+func serviceOptions(svc *Services) ([]grpc.Option, error) {
+	cfg := config.Get().Server
+	opts := append([]grpc.Option{
+		grpc.WithValidation(),
+		// After validation (which runtime-go prepends): the chain every
+		// surface shares -- a test's bufconn server included.
+		grpc.WithUnaryInterceptors(svc.Interceptors()...),
+		// Every MCP service together, as one server an agent connects to once.
+		grpc.WithMCPEndpoint(cfg.MCP.Path),
+		// Bounds Stop: HTTP gateways drain, then gRPC, within this; 0 keeps
+		// the runtime's default.
+		grpc.WithShutdownTimeout(cfg.ShutdownTimeout()),
+	}, svc.Options()...)
+	if cfg.MCP.Stateless {
+		opts = append(opts, grpc.WithStatelessMCP())
+	}
+	cors, err := corsOption(cfg.CORS)
+	if err != nil {
+		return nil, err
+	}
+	if cors != nil {
+		opts = append(opts, cors)
+	}
+	if tlsCfg := cfg.TLS; tlsCfg.Enabled() {
+		if _, err := tls.LoadX509KeyPair(tlsCfg.CertFile, tlsCfg.KeyFile); err != nil {
+			return nil, fmt.Errorf("load TLS certificate (%s, %s): %w", tlsCfg.CertFile, tlsCfg.KeyFile, err)
+		}
+		opts = append(opts, grpc.WithCertificates(tlsCfg.CertFile, tlsCfg.KeyFile))
+	}
+	return opts, nil
+}
+
+// Start begins serving gRPC, HTTP, and MCP traffic, and launches the
+// background work tied to the server's context. Non-blocking.
+func (s *Server) Start() error {
+	if err := s.hybridServer.Start(); err != nil {
+		return fmt.Errorf("failed to start hybrid server: %w", err)
+	}
+	s.svc.Start(s.ctx)
+	return nil
+}
+
+// Stop cancels the background work, drains active connections, shuts the
+// server down, and closes what the services hold.
+func (s *Server) Stop() error {
+	s.cancel()
+	if err := s.hybridServer.Stop(); err != nil {
+		return fmt.Errorf("error stopping hybrid server: %w", err)
+	}
+	if err := s.hybridServer.Close(); err != nil {
+		return fmt.Errorf("error closing hybrid server: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := s.svc.Close(ctx); err != nil {
+		telemetry.Warn("Services did not close cleanly", "error", err)
+	}
+	return nil
+}
+
+// Wait blocks until a SIGINT or SIGTERM signal is received, or until the
+// server's context is cancelled.
+func (s *Server) Wait() {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	select {
+	case <-ctx.Done():
+	case <-s.ctx.Done():
+	}
+}
+
+// NewGRPCServer assembles the services on conn (opened from config when nil)
+// with what provider provisions, and returns a standalone gRPC server
+// carrying the production chain -- validation, then Interceptors -- with
+// every service registered: the seam an end-to-end test serves over bufconn.
+// The caller owns Serve and Stop.
+func NewGRPCServer(conn *database.Connection, provider Provider) (*grpc.GRPCServer, *Services, error) {
+	svc, err := newServices(conn, provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	srv, err := grpc.NewStandaloneGRPCServer(svc.Interceptors()...)
+	if err != nil {
+		return nil, nil, err
+	}
+	svc.Register(srv)
+	return srv, svc, nil
+}

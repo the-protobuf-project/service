@@ -1,0 +1,20 @@
+{{ .Banner }}
+
+// Command {{ .Name }} is the skeleton: it serves the generated standard
+// methods with no business logic, and answers every custom method
+// UNIMPLEMENTED. A project's command is the same one line with its own
+// Provider -- app.Main(app.Options{Provider: provision}) -- which the shell
+// refuses to start while a custom method has no Logic.
+package main
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+func main() {
+	app.Main(app.Options{Provider: func(*server.Deps) (server.Provision, error) {
+		return server.Provision{Unimplemented: true}, nil
+	}})
+}

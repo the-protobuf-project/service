@@ -1,0 +1,73 @@
+{{ .Banner }}
+
+package database
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+// defaultPoolSampleInterval is how often the pool monitor samples.
+const defaultPoolSampleInterval = 30 * time.Second
+
+// poolMetrics are the connection pool's health, recorded as deltas so the
+// gauges and counters add up across samples.
+type poolMetrics struct {
+	Open    int64 `telemetry:"metric:gauge:db.pool.open"`
+	InUse   int64 `telemetry:"metric:gauge:db.pool.in_use"`
+	Idle    int64 `telemetry:"metric:gauge:db.pool.idle"`
+	MaxOpen int64 `telemetry:"metric:gauge:db.pool.max_open"`
+	Waits   int64 `telemetry:"metric:counter:db.pool.wait_count"`
+	WaitMs  int64 `telemetry:"metric:counter:db.pool.wait_ms"`
+}
+
+// StartPoolMonitor publishes conn's pool health every interval (0 is 30
+// seconds) until ctx is cancelled. Without a pipeline it does nothing.
+func StartPoolMonitor(ctx context.Context, conn *Connection, interval time.Duration) {
+	if conn == nil || conn.PgSQLConn == nil || telemetry.Telemetry == nil {
+		return
+	}
+	sqlDB, err := conn.PgSQLConn.DB()
+	if err != nil {
+		telemetry.Error("pool monitor: no pool handle", "error", err)
+		return
+	}
+	if interval <= 0 {
+		interval = defaultPoolSampleInterval
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		var last sql.DBStats
+		sample(sqlDB, &last)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				sample(sqlDB, &last)
+			}
+		}
+	}()
+}
+
+func sample(sqlDB *sql.DB, last *sql.DBStats) {
+	s := sqlDB.Stats()
+	m := poolMetrics{
+		Open:    int64(s.OpenConnections - last.OpenConnections),
+		InUse:   int64(s.InUse - last.InUse),
+		Idle:    int64(s.Idle - last.Idle),
+		MaxOpen: int64(s.MaxOpenConnections - last.MaxOpenConnections),
+		Waits:   s.WaitCount - last.WaitCount,
+		WaitMs:  (s.WaitDuration - last.WaitDuration).Milliseconds(),
+	}
+	*last = s
+	t := telemetry.Telemetry
+	if t == nil {
+		return
+	}
+	if err := t.Metrics.Record(m); err != nil {
+		telemetry.Error("pool monitor: record failed", "error", err)
+	}
+}

@@ -1,0 +1,18 @@
+{{ .Banner }}
+
+package telemetry
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+// Meter is the pipeline's meter, or one that discards every measurement
+// before Init has run.
+func Meter() telemetry.Meter {
+	if t := Telemetry; t != nil {
+		return t.Meter()
+	}
+	return telemetry.NoopMeter
+}

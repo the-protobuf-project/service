@@ -1,0 +1,48 @@
+{{ .Banner }}
+
+package database
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+
+// wrappingDialector is Postgres's dialector with error translation that keeps
+// the driver's error: a translated error wraps both the GORM sentinel and the
+// *pgconn.PgError, so the repositories map the sentinel and still read the
+// constraint name off the original.
+type wrappingDialector struct {
+	*postgres.Dialector
+}
+
+// pgSentinels are the SQLSTATEs the repositories branch on.
+var pgSentinels = map[string]error{
+	"23505": gorm.ErrDuplicatedKey,
+	"23503": gorm.ErrForeignKeyViolated,
+	"23514": gorm.ErrCheckConstraintViolated,
+	"42703": gorm.ErrInvalidField,
+}
+
+// Translate implements gorm.ErrorTranslator.
+func (wrappingDialector) Translate(err error) error {
+	var pg *pgconn.PgError
+	if !errors.As(err, &pg) {
+		return err
+	}
+	if sentinel, ok := pgSentinels[pg.Code]; ok {
+		return fmt.Errorf("%w: %w", sentinel, err)
+	}
+	return err
+}
+
+// OpenGorm opens Postgres at dsn with error translation on and, unless cfg
+// names one, the logger that stays quiet about outcomes the repositories
+// expect.
+func OpenGorm(dsn string, cfg *gorm.Config) (*gorm.DB, error) {
+	cfg.TranslateError = true
+	if cfg.Logger == nil {
+		cfg.Logger = expectedLogger{logger.Default}
+	}
+	return gorm.Open(wrappingDialector{postgres.Open(dsn).(*postgres.Dialector)}, cfg)
+}
