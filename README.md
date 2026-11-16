@@ -235,19 +235,40 @@ when needed. Shared behavior lives in `servicex/mod.rs`, `servicex/feeds.rs`, an
 When upgrading from the flat layout, remove the old generated `servicex.rs`
 and `<proto.package>.svc.rs` files before regenerating. The fixture update
 command performs this cleanup for `examples/rust`.
-It includes standard CRUD and undelete/purge methods, async
-repository and hook traits, custom method traits (including streaming), typed
-error constructors, change feeds, and event/idempotency record adapters.
-Construct a generated server with `servicex::Options` and a
-`servicex::Resource` for each resource, then register `server.into_service()`
-with tonic. `Options` takes a `prost_reflect::DescriptorPool` containing your
-schema and its imports; it supplies field behavior and mask metadata.
+Every RPC is answered by a **handler** the application registers: the
+request message in, the response message out -- a Diesel query, a call to
+another service, any business logic. The plugin never generates the database
+layer; it runs each standard method's checks and hooks around its handler:
 
-Implement the generated `Repository<M>` trait for your persistence layer.
-Mutations must enforce etags atomically; repositories also implement filtering,
-ordering, paging, timestamps and soft deletion. Adapter settlement may update
-output-only fields through `update_with_output_only`. Hooks receive request
-metadata and extensions through `Context`; custom RPCs receive tonic requests.
+| Method | Generated around the handler |
+|---|---|
+| Get, Purge | the name's shape |
+| List | the parent's shape (AIP-159 `-` allowed), `ParentCheck`, `page_size` |
+| Create | the id (AIP-122) and parent; the resource named, OUTPUT_ONLY cleared, REQUIRED checked; `ParentCheck`, `Validate`, `BeforeCreate`; `validate_only`; `AfterCreate` |
+| Update | the name and `update_mask`; with the stored record (read through the service's own Get handler) its etag, the merge, IMMUTABLE and REQUIRED fields; `allow_missing`; `Validate`, `BeforeUpdate`; `validate_only`; `AfterUpdate`. The handler receives the record to write and the canonical mask, carrying the request's etag |
+| Delete, Undelete | the name; with the stored record its etag and deleted state; `allow_missing`, `force`, `validate_only`; the before/after hooks |
+| Custom (unary or streaming) | nothing: straight to its handler |
+
+```rust
+let handlers = ds::OrganizationsHandlers::default()
+    .get_organization(|ctx, req: pb::GetOrganizationRequest| async move { db.get(&req.name).await })
+    .create_organization(|ctx, req: pb::CreateOrganizationRequest| async move { db.insert(req).await })
+    // ... one per RPC
+    ;
+let server = ds::OrganizationsServer::new(options, handlers)?   // MissingHandlers names any RPC left out
+    .with_organization_hooks(MyHooks);                          // servicex::Hooks, optional
+tonic::transport::Server::builder().add_service(server.into_service());
+```
+
+A server is never built with an RPC nothing answers: `new` returns
+`servicex::MissingHandlers` listing them. Handlers that write enforce the etag
+in the write. Handlers and hooks receive request metadata and extensions
+through `servicex::Context`. `Options` takes a `prost_reflect::DescriptorPool`
+containing your schema and its imports; it supplies field behavior and mask
+metadata.
+
+Change feeds and the event and idempotency record adapters read through the
+`servicex::Repository<M>` trait, implemented over the same persistence layer.
 
 The Rust target uses tonic 0.14, prost/prost-types 0.14, tonic-types 0.14,
 prost-reflect 0.16 with `serde`, futures-core 0.3, and serde_json 1. See the

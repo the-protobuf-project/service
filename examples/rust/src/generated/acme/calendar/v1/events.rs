@@ -13,42 +13,153 @@
 use crate::pb::acme::calendar::v1 as pb;
 use crate::service::servicex;
 
-/// Custom RPC handlers for Events. Override the methods your application serves.
-#[tonic::async_trait]
-pub trait EventsCustom: Send + Sync {
-    async fn expand_event(
-        &self,
-        _request: tonic::Request<pb::ExpandEventRequest>,
-    ) -> Result<tonic::Response<pb::ExpandEventResponse>, tonic::Status> {
-        Err(tonic::Status::unimplemented("ExpandEvent"))
+/// The handlers of acme.calendar.v1.Events: one per RPC, the request message in and the response
+/// message out -- the database layer, a call to another service, any business logic.
+/// The server runs the generated checks and hooks of a standard method around its handler.
+#[derive(Default, Clone)]
+pub struct EventsHandlers {
+    /// GetEvent.
+    pub get_event: Option<servicex::Handler<pb::GetEventRequest, pb::Event>>,
+    /// ListEvents.
+    pub list_events: Option<servicex::Handler<pb::ListEventsRequest, pb::ListEventsResponse>>,
+    /// CreateEvent.
+    pub create_event: Option<servicex::Handler<pb::CreateEventRequest, pb::Event>>,
+    /// UpdateEvent.
+    pub update_event: Option<servicex::Handler<pb::UpdateEventRequest, pb::Event>>,
+    /// DeleteEvent.
+    pub delete_event: Option<servicex::Handler<pb::DeleteEventRequest, ()>>,
+    /// UndeleteEvent.
+    pub undelete_event: Option<servicex::Handler<pb::UndeleteEventRequest, pb::Event>>,
+    /// ExpandEvent.
+    pub expand_event: Option<servicex::Handler<pb::ExpandEventRequest, pb::ExpandEventResponse>>,
+}
+
+impl EventsHandlers {
+    /// Registers the handler of GetEvent.
+    pub fn get_event<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::GetEventRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Event, tonic::Status>> + Send + 'static,
+    {
+        self.get_event = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of ListEvents.
+    pub fn list_events<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::ListEventsRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::ListEventsResponse, tonic::Status>>
+            + Send
+            + 'static,
+    {
+        self.list_events = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of CreateEvent.
+    pub fn create_event<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::CreateEventRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Event, tonic::Status>> + Send + 'static,
+    {
+        self.create_event = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of UpdateEvent.
+    pub fn update_event<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::UpdateEventRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Event, tonic::Status>> + Send + 'static,
+    {
+        self.update_event = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of DeleteEvent.
+    pub fn delete_event<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::DeleteEventRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<(), tonic::Status>> + Send + 'static,
+    {
+        self.delete_event = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of UndeleteEvent.
+    pub fn undelete_event<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::UndeleteEventRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Event, tonic::Status>> + Send + 'static,
+    {
+        self.undelete_event = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of ExpandEvent.
+    pub fn expand_event<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::ExpandEventRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::ExpandEventResponse, tonic::Status>>
+            + Send
+            + 'static,
+    {
+        self.expand_event = Some(servicex::Handler::new(f));
+        self
+    }
+    /// The RPCs no handler is registered for.
+    pub fn missing(&self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.get_event.is_none() {
+            out.push("GetEvent");
+        }
+        if self.list_events.is_none() {
+            out.push("ListEvents");
+        }
+        if self.create_event.is_none() {
+            out.push("CreateEvent");
+        }
+        if self.update_event.is_none() {
+            out.push("UpdateEvent");
+        }
+        if self.delete_event.is_none() {
+            out.push("DeleteEvent");
+        }
+        if self.undelete_event.is_none() {
+            out.push("UndeleteEvent");
+        }
+        if self.expand_event.is_none() {
+            out.push("ExpandEvent");
+        }
+        out
     }
 }
 
-/// Default custom handlers returning `Unimplemented`.
-pub struct NopEventsCustom;
-
-impl EventsCustom for NopEventsCustom {}
-
-/// Generated server backed by typed repositories and application hooks.
+/// acme.calendar.v1.Events's server: each standard method's generated checks and hooks around its
+/// registered handler, and every custom method straight to its own.
 pub struct EventsServer {
     pub options: servicex::Options,
-    pub custom: std::sync::Arc<dyn EventsCustom>,
-    pub event: servicex::Resource<pb::Event>,
+    handlers: EventsHandlers,
+    event_hooks: std::sync::Arc<dyn servicex::Hooks<pb::Event>>,
 }
 
 impl EventsServer {
-    /// Creates a server over the supplied resources.
-    pub fn new(options: servicex::Options, event: servicex::Resource<pb::Event>) -> Self {
-        Self {
-            options,
-            event,
-            custom: std::sync::Arc::new(NopEventsCustom),
+    /// Builds the server over handlers, refusing one that leaves an RPC without a handler.
+    pub fn new(
+        options: servicex::Options,
+        handlers: EventsHandlers,
+    ) -> Result<Self, servicex::MissingHandlers> {
+        let methods = handlers.missing();
+        if !methods.is_empty() {
+            return Err(servicex::MissingHandlers {
+                service: "acme.calendar.v1.Events",
+                methods,
+            });
         }
+        Ok(Self {
+            options,
+            handlers,
+            event_hooks: std::sync::Arc::new(servicex::NopHooks),
+        })
     }
-
-    /// Installs the application's custom RPC handlers.
-    pub fn with_custom(mut self, custom: impl EventsCustom + 'static) -> Self {
-        self.custom = std::sync::Arc::new(custom);
+    /// Sets the hooks around Event's standard methods.
+    pub fn with_event_hooks(mut self, hooks: impl servicex::Hooks<pb::Event> + 'static) -> Self {
+        self.event_hooks = std::sync::Arc::new(hooks);
         self
     }
     /// Wraps this server for registration with tonic.
@@ -65,7 +176,6 @@ impl pb::events_server::Events for EventsServer {
     ) -> Result<tonic::Response<pb::Event>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.event;
         let spec = servicex::ResourceSpec {
             message: "acme.calendar.v1.Event",
             resource_type: "calendar.acme.example/Event",
@@ -82,8 +192,13 @@ impl pb::events_server::Events for EventsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("calendar.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let out = call.get(&req.name).await?;
+        let call = servicex::Call::new(self.event_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.get_event, "GetEvent")?;
+        call.name(&req.name)?;
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -93,7 +208,6 @@ impl pb::events_server::Events for EventsServer {
     ) -> Result<tonic::Response<pb::ListEventsResponse>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.event;
         let spec = servicex::ResourceSpec {
             message: "acme.calendar.v1.Event",
             resource_type: "calendar.acme.example/Event",
@@ -110,24 +224,13 @@ impl pb::events_server::Events for EventsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("calendar.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let (items, next) = call
-            .list(
-                &req.parent,
-                servicex::ListInput {
-                    page_size: req.page_size,
-                    page_token: req.page_token,
-                    filter: req.filter,
-                    order_by: req.order_by,
-                    show_deleted: req.show_deleted,
-                    read_mask: Vec::new(),
-                },
-            )
-            .await?;
-        let out = pb::ListEventsResponse {
-            events: items,
-            next_page_token: next,
-        };
+        let call = servicex::Call::new(self.event_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.list_events, "ListEvents")?;
+        call.list(&req.parent, req.page_size).await?;
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -136,8 +239,7 @@ impl pb::events_server::Events for EventsServer {
         request: tonic::Request<pb::CreateEventRequest>,
     ) -> Result<tonic::Response<pb::Event>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
-        let req = request.into_inner();
-        let resource = &self.event;
+        let mut req = request.into_inner();
         let spec = servicex::ResourceSpec {
             message: "acme.calendar.v1.Event",
             resource_type: "calendar.acme.example/Event",
@@ -154,11 +256,22 @@ impl pb::events_server::Events for EventsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("calendar.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
+        let call = servicex::Call::new(self.event_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.create_event, "CreateEvent")?;
         let body = req
             .event
+            .take()
             .ok_or_else(|| options.bad_field("REQUIRED_FIELD", "event", "resource is required"))?;
-        let out = call.create(&req.parent, &req.event_id, body, false).await?;
+        let body = call.create(&req.parent, &req.event_id, body).await?;
+        if false {
+            return Ok(tonic::Response::new(body));
+        }
+        req.event = Some(body);
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
+        call.after_create(&out).await?;
         Ok(tonic::Response::new(out))
     }
 
@@ -167,8 +280,7 @@ impl pb::events_server::Events for EventsServer {
         request: tonic::Request<pb::UpdateEventRequest>,
     ) -> Result<tonic::Response<pb::Event>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
-        let req = request.into_inner();
-        let resource = &self.event;
+        let mut req = request.into_inner();
         let spec = servicex::ResourceSpec {
             message: "acme.calendar.v1.Event",
             resource_type: "calendar.acme.example/Event",
@@ -185,13 +297,64 @@ impl pb::events_server::Events for EventsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("calendar.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
+        let call = servicex::Call::new(self.event_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.update_event, "UpdateEvent")?;
         let body = req
             .event
+            .clone()
             .ok_or_else(|| options.bad_field("REQUIRED_FIELD", "event", "resource is required"))?;
-        let out = call
-            .update(body, req.update_mask.map(|m| m.paths), false, false)
-            .await?;
+        let existing = match &self.handlers.get_event {
+            Some(get) => Some(
+                get.call(
+                    ctx.clone(),
+                    pb::GetEventRequest {
+                        name: body.name.clone(),
+                    },
+                )
+                .await,
+            ),
+            None => None,
+        };
+        let dry = false;
+        let out = match call
+            .update(
+                body,
+                req.update_mask.clone().map(|m| m.paths),
+                false,
+                existing,
+            )
+            .await?
+        {
+            servicex::Update::Create(value) => {
+                if dry {
+                    return Ok(tonic::Response::new(value));
+                }
+                req.event = Some(value);
+                let out = handler
+                    .call(ctx.clone(), req)
+                    .await
+                    .map_err(|e| call.mapped(e))?;
+                call.after_create(&out).await?;
+                out
+            }
+            servicex::Update::Write {
+                value,
+                paths,
+                preview,
+            } => {
+                if dry {
+                    return Ok(tonic::Response::new(preview));
+                }
+                req.event = Some(value);
+                req.update_mask = Some(prost_types::FieldMask { paths });
+                let out = handler
+                    .call(ctx.clone(), req)
+                    .await
+                    .map_err(|e| call.mapped(e))?;
+                call.after_update(&out).await?;
+                out
+            }
+        };
         Ok(tonic::Response::new(out))
     }
 
@@ -201,7 +364,6 @@ impl pb::events_server::Events for EventsServer {
     ) -> Result<tonic::Response<()>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.event;
         let spec = servicex::ResourceSpec {
             message: "acme.calendar.v1.Event",
             resource_type: "calendar.acme.example/Event",
@@ -218,10 +380,35 @@ impl pb::events_server::Events for EventsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("calendar.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let deleted = call.delete(&req.name, "", false, false, false).await?;
-        let _ = deleted;
-        let out = ();
+        let call = servicex::Call::new(self.event_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.delete_event, "DeleteEvent")?;
+        let name = req.name.clone();
+        let existing = match &self.handlers.get_event {
+            Some(get) => Some(
+                get.call(ctx.clone(), pb::GetEventRequest { name: name.clone() })
+                    .await,
+            ),
+            None => None,
+        };
+        let allow_missing = false;
+        match call
+            .delete(&name, "", allow_missing, false, existing)
+            .await?
+        {
+            servicex::Delete::Skip => return Ok(tonic::Response::new(())),
+            servicex::Delete::Proceed(_) => {
+                if false {
+                    return Ok(tonic::Response::new(()));
+                }
+            }
+        }
+        let out = match handler.call(ctx.clone(), req).await {
+            Err(e) if allow_missing && e.code() == tonic::Code::NotFound => {
+                return Ok(tonic::Response::new(()));
+            }
+            result => result.map_err(|e| call.mapped(e))?,
+        };
+        call.after_delete(&name).await?;
         Ok(tonic::Response::new(out))
     }
 
@@ -231,7 +418,6 @@ impl pb::events_server::Events for EventsServer {
     ) -> Result<tonic::Response<pb::Event>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.event;
         let spec = servicex::ResourceSpec {
             message: "acme.calendar.v1.Event",
             resource_type: "calendar.acme.example/Event",
@@ -248,8 +434,24 @@ impl pb::events_server::Events for EventsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("calendar.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let out = call.undelete(&req.name, "", false).await?;
+        let call = servicex::Call::new(self.event_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.undelete_event, "UndeleteEvent")?;
+        let name = req.name.clone();
+        let existing = match &self.handlers.get_event {
+            Some(get) => Some(
+                get.call(ctx.clone(), pb::GetEventRequest { name: name.clone() })
+                    .await,
+            ),
+            None => None,
+        };
+        let preview = call.undelete(&name, "", existing).await?;
+        if false {
+            return Ok(tonic::Response::new(preview.unwrap_or_default()));
+        }
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -257,6 +459,10 @@ impl pb::events_server::Events for EventsServer {
         &self,
         request: tonic::Request<pb::ExpandEventRequest>,
     ) -> Result<tonic::Response<pb::ExpandEventResponse>, tonic::Status> {
-        self.custom.expand_event(request).await
+        let ctx = servicex::Context::from_request(&request);
+        let out = servicex::handler(&self.handlers.expand_event, "ExpandEvent")?
+            .call(ctx, request.into_inner())
+            .await?;
+        Ok(tonic::Response::new(out))
     }
 }

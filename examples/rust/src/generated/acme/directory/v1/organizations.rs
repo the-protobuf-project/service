@@ -13,24 +13,146 @@
 use crate::pb::acme::directory::v1 as pb;
 use crate::service::servicex;
 
-/// Generated server backed by typed repositories and application hooks.
+/// The handlers of acme.directory.v1.Organizations: one per RPC, the request message in and the response
+/// message out -- the database layer, a call to another service, any business logic.
+/// The server runs the generated checks and hooks of a standard method around its handler.
+#[derive(Default, Clone)]
+pub struct OrganizationsHandlers {
+    /// GetOrganization.
+    pub get_organization: Option<servicex::Handler<pb::GetOrganizationRequest, pb::Organization>>,
+    /// ListOrganizations.
+    pub list_organizations:
+        Option<servicex::Handler<pb::ListOrganizationsRequest, pb::ListOrganizationsResponse>>,
+    /// CreateOrganization.
+    pub create_organization:
+        Option<servicex::Handler<pb::CreateOrganizationRequest, pb::Organization>>,
+    /// UpdateOrganization.
+    pub update_organization:
+        Option<servicex::Handler<pb::UpdateOrganizationRequest, pb::Organization>>,
+    /// DeleteOrganization.
+    pub delete_organization: Option<servicex::Handler<pb::DeleteOrganizationRequest, ()>>,
+    /// UndeleteOrganization.
+    pub undelete_organization:
+        Option<servicex::Handler<pb::UndeleteOrganizationRequest, pb::Organization>>,
+}
+
+impl OrganizationsHandlers {
+    /// Registers the handler of GetOrganization.
+    pub fn get_organization<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::GetOrganizationRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Organization, tonic::Status>> + Send + 'static,
+    {
+        self.get_organization = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of ListOrganizations.
+    pub fn list_organizations<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::ListOrganizationsRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::ListOrganizationsResponse, tonic::Status>>
+            + Send
+            + 'static,
+    {
+        self.list_organizations = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of CreateOrganization.
+    pub fn create_organization<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::CreateOrganizationRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Organization, tonic::Status>> + Send + 'static,
+    {
+        self.create_organization = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of UpdateOrganization.
+    pub fn update_organization<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::UpdateOrganizationRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Organization, tonic::Status>> + Send + 'static,
+    {
+        self.update_organization = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of DeleteOrganization.
+    pub fn delete_organization<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::DeleteOrganizationRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<(), tonic::Status>> + Send + 'static,
+    {
+        self.delete_organization = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of UndeleteOrganization.
+    pub fn undelete_organization<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::UndeleteOrganizationRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Organization, tonic::Status>> + Send + 'static,
+    {
+        self.undelete_organization = Some(servicex::Handler::new(f));
+        self
+    }
+    /// The RPCs no handler is registered for.
+    pub fn missing(&self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.get_organization.is_none() {
+            out.push("GetOrganization");
+        }
+        if self.list_organizations.is_none() {
+            out.push("ListOrganizations");
+        }
+        if self.create_organization.is_none() {
+            out.push("CreateOrganization");
+        }
+        if self.update_organization.is_none() {
+            out.push("UpdateOrganization");
+        }
+        if self.delete_organization.is_none() {
+            out.push("DeleteOrganization");
+        }
+        if self.undelete_organization.is_none() {
+            out.push("UndeleteOrganization");
+        }
+        out
+    }
+}
+
+/// acme.directory.v1.Organizations's server: each standard method's generated checks and hooks around its
+/// registered handler, and every custom method straight to its own.
 pub struct OrganizationsServer {
     pub options: servicex::Options,
-    pub organization: servicex::Resource<pb::Organization>,
+    handlers: OrganizationsHandlers,
+    organization_hooks: std::sync::Arc<dyn servicex::Hooks<pb::Organization>>,
 }
 
 impl OrganizationsServer {
-    /// Creates a server over the supplied resources.
+    /// Builds the server over handlers, refusing one that leaves an RPC without a handler.
     pub fn new(
         options: servicex::Options,
-        organization: servicex::Resource<pb::Organization>,
-    ) -> Self {
-        Self {
-            options,
-            organization,
+        handlers: OrganizationsHandlers,
+    ) -> Result<Self, servicex::MissingHandlers> {
+        let methods = handlers.missing();
+        if !methods.is_empty() {
+            return Err(servicex::MissingHandlers {
+                service: "acme.directory.v1.Organizations",
+                methods,
+            });
         }
+        Ok(Self {
+            options,
+            handlers,
+            organization_hooks: std::sync::Arc::new(servicex::NopHooks),
+        })
     }
-
+    /// Sets the hooks around Organization's standard methods.
+    pub fn with_organization_hooks(
+        mut self,
+        hooks: impl servicex::Hooks<pb::Organization> + 'static,
+    ) -> Self {
+        self.organization_hooks = std::sync::Arc::new(hooks);
+        self
+    }
     /// Wraps this server for registration with tonic.
     pub fn into_service(self) -> pb::organizations_server::OrganizationsServer<Self> {
         pb::organizations_server::OrganizationsServer::new(self)
@@ -45,7 +167,6 @@ impl pb::organizations_server::Organizations for OrganizationsServer {
     ) -> Result<tonic::Response<pb::Organization>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.organization;
         let spec = servicex::ResourceSpec {
             message: "acme.directory.v1.Organization",
             resource_type: "directory.acme.example/Organization",
@@ -62,8 +183,13 @@ impl pb::organizations_server::Organizations for OrganizationsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("directory.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let out = call.get(&req.name).await?;
+        let call = servicex::Call::new(self.organization_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.get_organization, "GetOrganization")?;
+        call.name(&req.name)?;
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -73,7 +199,6 @@ impl pb::organizations_server::Organizations for OrganizationsServer {
     ) -> Result<tonic::Response<pb::ListOrganizationsResponse>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.organization;
         let spec = servicex::ResourceSpec {
             message: "acme.directory.v1.Organization",
             resource_type: "directory.acme.example/Organization",
@@ -90,24 +215,13 @@ impl pb::organizations_server::Organizations for OrganizationsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("directory.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let (items, next) = call
-            .list(
-                "",
-                servicex::ListInput {
-                    page_size: req.page_size,
-                    page_token: req.page_token,
-                    filter: req.filter,
-                    order_by: req.order_by,
-                    show_deleted: req.show_deleted,
-                    read_mask: Vec::new(),
-                },
-            )
-            .await?;
-        let out = pb::ListOrganizationsResponse {
-            organizations: items,
-            next_page_token: next,
-        };
+        let call = servicex::Call::new(self.organization_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.list_organizations, "ListOrganizations")?;
+        call.list("", req.page_size).await?;
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -116,8 +230,7 @@ impl pb::organizations_server::Organizations for OrganizationsServer {
         request: tonic::Request<pb::CreateOrganizationRequest>,
     ) -> Result<tonic::Response<pb::Organization>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
-        let req = request.into_inner();
-        let resource = &self.organization;
+        let mut req = request.into_inner();
         let spec = servicex::ResourceSpec {
             message: "acme.directory.v1.Organization",
             resource_type: "directory.acme.example/Organization",
@@ -134,13 +247,21 @@ impl pb::organizations_server::Organizations for OrganizationsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("directory.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let body = req.organization.ok_or_else(|| {
+        let call = servicex::Call::new(self.organization_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.create_organization, "CreateOrganization")?;
+        let body = req.organization.take().ok_or_else(|| {
             options.bad_field("REQUIRED_FIELD", "organization", "resource is required")
         })?;
-        let out = call
-            .create("", &req.organization_id, body, req.validate_only)
-            .await?;
+        let body = call.create("", &req.organization_id, body).await?;
+        if req.validate_only {
+            return Ok(tonic::Response::new(body));
+        }
+        req.organization = Some(body);
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
+        call.after_create(&out).await?;
         Ok(tonic::Response::new(out))
     }
 
@@ -149,8 +270,7 @@ impl pb::organizations_server::Organizations for OrganizationsServer {
         request: tonic::Request<pb::UpdateOrganizationRequest>,
     ) -> Result<tonic::Response<pb::Organization>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
-        let req = request.into_inner();
-        let resource = &self.organization;
+        let mut req = request.into_inner();
         let spec = servicex::ResourceSpec {
             message: "acme.directory.v1.Organization",
             resource_type: "directory.acme.example/Organization",
@@ -167,18 +287,63 @@ impl pb::organizations_server::Organizations for OrganizationsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("directory.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let body = req.organization.ok_or_else(|| {
+        let call = servicex::Call::new(self.organization_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.update_organization, "UpdateOrganization")?;
+        let body = req.organization.clone().ok_or_else(|| {
             options.bad_field("REQUIRED_FIELD", "organization", "resource is required")
         })?;
-        let out = call
+        let existing = match &self.handlers.get_organization {
+            Some(get) => Some(
+                get.call(
+                    ctx.clone(),
+                    pb::GetOrganizationRequest {
+                        name: body.name.clone(),
+                    },
+                )
+                .await,
+            ),
+            None => None,
+        };
+        let dry = req.validate_only;
+        let out = match call
             .update(
                 body,
-                req.update_mask.map(|m| m.paths),
+                req.update_mask.clone().map(|m| m.paths),
                 req.allow_missing,
-                req.validate_only,
+                existing,
             )
-            .await?;
+            .await?
+        {
+            servicex::Update::Create(value) => {
+                if dry {
+                    return Ok(tonic::Response::new(value));
+                }
+                req.organization = Some(value);
+                let out = handler
+                    .call(ctx.clone(), req)
+                    .await
+                    .map_err(|e| call.mapped(e))?;
+                call.after_create(&out).await?;
+                out
+            }
+            servicex::Update::Write {
+                value,
+                paths,
+                preview,
+            } => {
+                if dry {
+                    return Ok(tonic::Response::new(preview));
+                }
+                req.organization = Some(value);
+                req.update_mask = Some(prost_types::FieldMask { paths });
+                let out = handler
+                    .call(ctx.clone(), req)
+                    .await
+                    .map_err(|e| call.mapped(e))?;
+                call.after_update(&out).await?;
+                out
+            }
+        };
         Ok(tonic::Response::new(out))
     }
 
@@ -188,7 +353,6 @@ impl pb::organizations_server::Organizations for OrganizationsServer {
     ) -> Result<tonic::Response<()>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.organization;
         let spec = servicex::ResourceSpec {
             message: "acme.directory.v1.Organization",
             resource_type: "directory.acme.example/Organization",
@@ -205,18 +369,38 @@ impl pb::organizations_server::Organizations for OrganizationsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("directory.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let deleted = call
-            .delete(
-                &req.name,
-                &req.etag,
-                req.allow_missing,
-                req.validate_only,
-                false,
-            )
-            .await?;
-        let _ = deleted;
-        let out = ();
+        let call = servicex::Call::new(self.organization_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.delete_organization, "DeleteOrganization")?;
+        let name = req.name.clone();
+        let existing = match &self.handlers.get_organization {
+            Some(get) => Some(
+                get.call(
+                    ctx.clone(),
+                    pb::GetOrganizationRequest { name: name.clone() },
+                )
+                .await,
+            ),
+            None => None,
+        };
+        let allow_missing = req.allow_missing;
+        match call
+            .delete(&name, &req.etag, allow_missing, false, existing)
+            .await?
+        {
+            servicex::Delete::Skip => return Ok(tonic::Response::new(())),
+            servicex::Delete::Proceed(_) => {
+                if req.validate_only {
+                    return Ok(tonic::Response::new(()));
+                }
+            }
+        }
+        let out = match handler.call(ctx.clone(), req).await {
+            Err(e) if allow_missing && e.code() == tonic::Code::NotFound => {
+                return Ok(tonic::Response::new(()));
+            }
+            result => result.map_err(|e| call.mapped(e))?,
+        };
+        call.after_delete(&name).await?;
         Ok(tonic::Response::new(out))
     }
 
@@ -226,7 +410,6 @@ impl pb::organizations_server::Organizations for OrganizationsServer {
     ) -> Result<tonic::Response<pb::Organization>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.organization;
         let spec = servicex::ResourceSpec {
             message: "acme.directory.v1.Organization",
             resource_type: "directory.acme.example/Organization",
@@ -243,8 +426,28 @@ impl pb::organizations_server::Organizations for OrganizationsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("directory.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let out = call.undelete(&req.name, "", false).await?;
+        let call = servicex::Call::new(self.organization_hooks.as_ref(), &options, &spec, &ctx);
+        let handler =
+            servicex::handler(&self.handlers.undelete_organization, "UndeleteOrganization")?;
+        let name = req.name.clone();
+        let existing = match &self.handlers.get_organization {
+            Some(get) => Some(
+                get.call(
+                    ctx.clone(),
+                    pb::GetOrganizationRequest { name: name.clone() },
+                )
+                .await,
+            ),
+            None => None,
+        };
+        let preview = call.undelete(&name, "", existing).await?;
+        if false {
+            return Ok(tonic::Response::new(preview.unwrap_or_default()));
+        }
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 }

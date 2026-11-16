@@ -13,42 +13,109 @@
 use crate::pb::acme::booking::v1 as pb;
 use crate::service::servicex;
 
-/// Custom RPC handlers for Holds. Override the methods your application serves.
-#[tonic::async_trait]
-pub trait HoldsCustom: Send + Sync {
-    async fn release_hold(
-        &self,
-        _request: tonic::Request<pb::ReleaseHoldRequest>,
-    ) -> Result<tonic::Response<pb::Hold>, tonic::Status> {
-        Err(tonic::Status::unimplemented("ReleaseHold"))
+/// The handlers of acme.booking.v1.Holds: one per RPC, the request message in and the response
+/// message out -- the database layer, a call to another service, any business logic.
+/// The server runs the generated checks and hooks of a standard method around its handler.
+#[derive(Default, Clone)]
+pub struct HoldsHandlers {
+    /// GetHold.
+    pub get_hold: Option<servicex::Handler<pb::GetHoldRequest, pb::Hold>>,
+    /// ListHolds.
+    pub list_holds: Option<servicex::Handler<pb::ListHoldsRequest, pb::ListHoldsResponse>>,
+    /// CreateHold.
+    pub create_hold: Option<servicex::Handler<pb::CreateHoldRequest, pb::Hold>>,
+    /// ReleaseHold.
+    pub release_hold: Option<servicex::Handler<pb::ReleaseHoldRequest, pb::Hold>>,
+}
+
+impl HoldsHandlers {
+    /// Registers the handler of GetHold.
+    pub fn get_hold<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::GetHoldRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Hold, tonic::Status>> + Send + 'static,
+    {
+        self.get_hold = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of ListHolds.
+    pub fn list_holds<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::ListHoldsRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::ListHoldsResponse, tonic::Status>>
+            + Send
+            + 'static,
+    {
+        self.list_holds = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of CreateHold.
+    pub fn create_hold<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::CreateHoldRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Hold, tonic::Status>> + Send + 'static,
+    {
+        self.create_hold = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of ReleaseHold.
+    pub fn release_hold<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::ReleaseHoldRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Hold, tonic::Status>> + Send + 'static,
+    {
+        self.release_hold = Some(servicex::Handler::new(f));
+        self
+    }
+    /// The RPCs no handler is registered for.
+    pub fn missing(&self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.get_hold.is_none() {
+            out.push("GetHold");
+        }
+        if self.list_holds.is_none() {
+            out.push("ListHolds");
+        }
+        if self.create_hold.is_none() {
+            out.push("CreateHold");
+        }
+        if self.release_hold.is_none() {
+            out.push("ReleaseHold");
+        }
+        out
     }
 }
 
-/// Default custom handlers returning `Unimplemented`.
-pub struct NopHoldsCustom;
-
-impl HoldsCustom for NopHoldsCustom {}
-
-/// Generated server backed by typed repositories and application hooks.
+/// acme.booking.v1.Holds's server: each standard method's generated checks and hooks around its
+/// registered handler, and every custom method straight to its own.
 pub struct HoldsServer {
     pub options: servicex::Options,
-    pub custom: std::sync::Arc<dyn HoldsCustom>,
-    pub hold: servicex::Resource<pb::Hold>,
+    handlers: HoldsHandlers,
+    hold_hooks: std::sync::Arc<dyn servicex::Hooks<pb::Hold>>,
 }
 
 impl HoldsServer {
-    /// Creates a server over the supplied resources.
-    pub fn new(options: servicex::Options, hold: servicex::Resource<pb::Hold>) -> Self {
-        Self {
-            options,
-            hold,
-            custom: std::sync::Arc::new(NopHoldsCustom),
+    /// Builds the server over handlers, refusing one that leaves an RPC without a handler.
+    pub fn new(
+        options: servicex::Options,
+        handlers: HoldsHandlers,
+    ) -> Result<Self, servicex::MissingHandlers> {
+        let methods = handlers.missing();
+        if !methods.is_empty() {
+            return Err(servicex::MissingHandlers {
+                service: "acme.booking.v1.Holds",
+                methods,
+            });
         }
+        Ok(Self {
+            options,
+            handlers,
+            hold_hooks: std::sync::Arc::new(servicex::NopHooks),
+        })
     }
-
-    /// Installs the application's custom RPC handlers.
-    pub fn with_custom(mut self, custom: impl HoldsCustom + 'static) -> Self {
-        self.custom = std::sync::Arc::new(custom);
+    /// Sets the hooks around Hold's standard methods.
+    pub fn with_hold_hooks(mut self, hooks: impl servicex::Hooks<pb::Hold> + 'static) -> Self {
+        self.hold_hooks = std::sync::Arc::new(hooks);
         self
     }
     /// Wraps this server for registration with tonic.
@@ -65,7 +132,6 @@ impl pb::holds_server::Holds for HoldsServer {
     ) -> Result<tonic::Response<pb::Hold>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.hold;
         let spec = servicex::ResourceSpec {
             message: "acme.booking.v1.Hold",
             resource_type: "booking.acme.example/Hold",
@@ -76,8 +142,13 @@ impl pb::holds_server::Holds for HoldsServer {
             soft_delete: false,
         };
         let options = self.options.with_domain("booking.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let out = call.get(&req.name).await?;
+        let call = servicex::Call::new(self.hold_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.get_hold, "GetHold")?;
+        call.name(&req.name)?;
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -87,7 +158,6 @@ impl pb::holds_server::Holds for HoldsServer {
     ) -> Result<tonic::Response<pb::ListHoldsResponse>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.hold;
         let spec = servicex::ResourceSpec {
             message: "acme.booking.v1.Hold",
             resource_type: "booking.acme.example/Hold",
@@ -98,24 +168,13 @@ impl pb::holds_server::Holds for HoldsServer {
             soft_delete: false,
         };
         let options = self.options.with_domain("booking.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let (items, next) = call
-            .list(
-                &req.parent,
-                servicex::ListInput {
-                    page_size: req.page_size,
-                    page_token: req.page_token,
-                    filter: req.filter,
-                    order_by: String::new(),
-                    show_deleted: false,
-                    read_mask: Vec::new(),
-                },
-            )
-            .await?;
-        let out = pb::ListHoldsResponse {
-            holds: items,
-            next_page_token: next,
-        };
+        let call = servicex::Call::new(self.hold_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.list_holds, "ListHolds")?;
+        call.list(&req.parent, req.page_size).await?;
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -124,8 +183,7 @@ impl pb::holds_server::Holds for HoldsServer {
         request: tonic::Request<pb::CreateHoldRequest>,
     ) -> Result<tonic::Response<pb::Hold>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
-        let req = request.into_inner();
-        let resource = &self.hold;
+        let mut req = request.into_inner();
         let spec = servicex::ResourceSpec {
             message: "acme.booking.v1.Hold",
             resource_type: "booking.acme.example/Hold",
@@ -136,11 +194,22 @@ impl pb::holds_server::Holds for HoldsServer {
             soft_delete: false,
         };
         let options = self.options.with_domain("booking.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
+        let call = servicex::Call::new(self.hold_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.create_hold, "CreateHold")?;
         let body = req
             .hold
+            .take()
             .ok_or_else(|| options.bad_field("REQUIRED_FIELD", "hold", "resource is required"))?;
-        let out = call.create(&req.parent, &req.hold_id, body, false).await?;
+        let body = call.create(&req.parent, &req.hold_id, body).await?;
+        if false {
+            return Ok(tonic::Response::new(body));
+        }
+        req.hold = Some(body);
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
+        call.after_create(&out).await?;
         Ok(tonic::Response::new(out))
     }
 
@@ -148,6 +217,10 @@ impl pb::holds_server::Holds for HoldsServer {
         &self,
         request: tonic::Request<pb::ReleaseHoldRequest>,
     ) -> Result<tonic::Response<pb::Hold>, tonic::Status> {
-        self.custom.release_hold(request).await
+        let ctx = servicex::Context::from_request(&request);
+        let out = servicex::handler(&self.handlers.release_hold, "ReleaseHold")?
+            .call(ctx, request.into_inner())
+            .await?;
+        Ok(tonic::Response::new(out))
     }
 }

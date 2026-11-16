@@ -13,60 +13,154 @@
 use crate::pb::archive::v1 as pb;
 use crate::service::servicex;
 
-/// Custom RPC handlers for Documents. Override the methods your application serves.
-#[tonic::async_trait]
-pub trait DocumentsCustom: Send + Sync {
-    async fn get_document_by_hand(
-        &self,
-        _request: tonic::Request<pb::GetDocumentRequest>,
-    ) -> Result<tonic::Response<pb::Document>, tonic::Status> {
-        Err(tonic::Status::unimplemented("GetDocumentByHand"))
+/// The handlers of archive.v1.Documents: one per RPC, the request message in and the response
+/// message out -- the database layer, a call to another service, any business logic.
+/// The server runs the generated checks and hooks of a standard method around its handler.
+#[derive(Default, Clone)]
+pub struct DocumentsHandlers {
+    /// GetDocument.
+    pub get_document: Option<servicex::Handler<pb::GetDocumentRequest, pb::Document>>,
+    /// DeleteDocument.
+    pub delete_document: Option<servicex::Handler<pb::DeleteDocumentRequest, pb::Document>>,
+    /// PurgeDocument.
+    pub purge_document: Option<servicex::Handler<pb::PurgeDocumentRequest, ()>>,
+    /// GetDocumentByHand.
+    pub get_document_by_hand: Option<servicex::Handler<pb::GetDocumentRequest, pb::Document>>,
+    /// UndeleteDocument.
+    pub undelete_document: Option<servicex::Handler<pb::UndeleteDocumentRequest, pb::Document>>,
+    /// ListPages.
+    pub list_pages: Option<servicex::Handler<pb::ListPagesRequest, pb::ListPagesResponse>>,
+    /// GetSettings.
+    pub get_settings: Option<servicex::Handler<pb::GetSettingsRequest, pb::Settings>>,
+}
+
+impl DocumentsHandlers {
+    /// Registers the handler of GetDocument.
+    pub fn get_document<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::GetDocumentRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Document, tonic::Status>> + Send + 'static,
+    {
+        self.get_document = Some(servicex::Handler::new(f));
+        self
     }
-    async fn undelete_document(
-        &self,
-        _request: tonic::Request<pb::UndeleteDocumentRequest>,
-    ) -> Result<tonic::Response<pb::Document>, tonic::Status> {
-        Err(tonic::Status::unimplemented("UndeleteDocument"))
+    /// Registers the handler of DeleteDocument.
+    pub fn delete_document<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::DeleteDocumentRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Document, tonic::Status>> + Send + 'static,
+    {
+        self.delete_document = Some(servicex::Handler::new(f));
+        self
     }
-    async fn list_pages(
-        &self,
-        _request: tonic::Request<pb::ListPagesRequest>,
-    ) -> Result<tonic::Response<pb::ListPagesResponse>, tonic::Status> {
-        Err(tonic::Status::unimplemented("ListPages"))
+    /// Registers the handler of PurgeDocument.
+    pub fn purge_document<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::PurgeDocumentRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<(), tonic::Status>> + Send + 'static,
+    {
+        self.purge_document = Some(servicex::Handler::new(f));
+        self
     }
-    async fn get_settings(
-        &self,
-        _request: tonic::Request<pb::GetSettingsRequest>,
-    ) -> Result<tonic::Response<pb::Settings>, tonic::Status> {
-        Err(tonic::Status::unimplemented("GetSettings"))
+    /// Registers the handler of GetDocumentByHand.
+    pub fn get_document_by_hand<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::GetDocumentRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Document, tonic::Status>> + Send + 'static,
+    {
+        self.get_document_by_hand = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of UndeleteDocument.
+    pub fn undelete_document<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::UndeleteDocumentRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Document, tonic::Status>> + Send + 'static,
+    {
+        self.undelete_document = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of ListPages.
+    pub fn list_pages<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::ListPagesRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::ListPagesResponse, tonic::Status>>
+            + Send
+            + 'static,
+    {
+        self.list_pages = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of GetSettings.
+    pub fn get_settings<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::GetSettingsRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Settings, tonic::Status>> + Send + 'static,
+    {
+        self.get_settings = Some(servicex::Handler::new(f));
+        self
+    }
+    /// The RPCs no handler is registered for.
+    pub fn missing(&self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.get_document.is_none() {
+            out.push("GetDocument");
+        }
+        if self.delete_document.is_none() {
+            out.push("DeleteDocument");
+        }
+        if self.purge_document.is_none() {
+            out.push("PurgeDocument");
+        }
+        if self.get_document_by_hand.is_none() {
+            out.push("GetDocumentByHand");
+        }
+        if self.undelete_document.is_none() {
+            out.push("UndeleteDocument");
+        }
+        if self.list_pages.is_none() {
+            out.push("ListPages");
+        }
+        if self.get_settings.is_none() {
+            out.push("GetSettings");
+        }
+        out
     }
 }
 
-/// Default custom handlers returning `Unimplemented`.
-pub struct NopDocumentsCustom;
-
-impl DocumentsCustom for NopDocumentsCustom {}
-
-/// Generated server backed by typed repositories and application hooks.
+/// archive.v1.Documents's server: each standard method's generated checks and hooks around its
+/// registered handler, and every custom method straight to its own.
 pub struct DocumentsServer {
     pub options: servicex::Options,
-    pub custom: std::sync::Arc<dyn DocumentsCustom>,
-    pub document: servicex::Resource<pb::Document>,
+    handlers: DocumentsHandlers,
+    document_hooks: std::sync::Arc<dyn servicex::Hooks<pb::Document>>,
 }
 
 impl DocumentsServer {
-    /// Creates a server over the supplied resources.
-    pub fn new(options: servicex::Options, document: servicex::Resource<pb::Document>) -> Self {
-        Self {
-            options,
-            document,
-            custom: std::sync::Arc::new(NopDocumentsCustom),
+    /// Builds the server over handlers, refusing one that leaves an RPC without a handler.
+    pub fn new(
+        options: servicex::Options,
+        handlers: DocumentsHandlers,
+    ) -> Result<Self, servicex::MissingHandlers> {
+        let methods = handlers.missing();
+        if !methods.is_empty() {
+            return Err(servicex::MissingHandlers {
+                service: "archive.v1.Documents",
+                methods,
+            });
         }
+        Ok(Self {
+            options,
+            handlers,
+            document_hooks: std::sync::Arc::new(servicex::NopHooks),
+        })
     }
-
-    /// Installs the application's custom RPC handlers.
-    pub fn with_custom(mut self, custom: impl DocumentsCustom + 'static) -> Self {
-        self.custom = std::sync::Arc::new(custom);
+    /// Sets the hooks around Document's standard methods.
+    pub fn with_document_hooks(
+        mut self,
+        hooks: impl servicex::Hooks<pb::Document> + 'static,
+    ) -> Self {
+        self.document_hooks = std::sync::Arc::new(hooks);
         self
     }
     /// Wraps this server for registration with tonic.
@@ -83,7 +177,6 @@ impl pb::documents_server::Documents for DocumentsServer {
     ) -> Result<tonic::Response<pb::Document>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.document;
         let spec = servicex::ResourceSpec {
             message: "archive.v1.Document",
             resource_type: "archive.example/Document",
@@ -94,8 +187,13 @@ impl pb::documents_server::Documents for DocumentsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("archive.v1");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let out = call.get(&req.name).await?;
+        let call = servicex::Call::new(self.document_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.get_document, "GetDocument")?;
+        call.name(&req.name)?;
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -105,7 +203,6 @@ impl pb::documents_server::Documents for DocumentsServer {
     ) -> Result<tonic::Response<pb::Document>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.document;
         let spec = servicex::ResourceSpec {
             message: "archive.v1.Document",
             resource_type: "archive.example/Document",
@@ -116,17 +213,43 @@ impl pb::documents_server::Documents for DocumentsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("archive.v1");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let deleted = call
-            .delete(
-                &req.name,
-                &req.etag,
-                req.allow_missing,
-                req.validate_only,
-                req.force,
-            )
-            .await?;
-        let out = deleted.unwrap_or_default();
+        let call = servicex::Call::new(self.document_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.delete_document, "DeleteDocument")?;
+        let name = req.name.clone();
+        let existing = match &self.handlers.get_document {
+            Some(get) => Some(
+                get.call(ctx.clone(), pb::GetDocumentRequest { name: name.clone() })
+                    .await,
+            ),
+            None => None,
+        };
+        let allow_missing = req.allow_missing;
+        match call
+            .delete(&name, &req.etag, allow_missing, req.force, existing)
+            .await?
+        {
+            servicex::Delete::Skip => {
+                return Ok(tonic::Response::new(pb::Document {
+                    name: name.clone(),
+                    ..Default::default()
+                }));
+            }
+            servicex::Delete::Proceed(existing) => {
+                if req.validate_only {
+                    return Ok(tonic::Response::new(existing.unwrap_or_default()));
+                }
+            }
+        }
+        let out = match handler.call(ctx.clone(), req).await {
+            Err(e) if allow_missing && e.code() == tonic::Code::NotFound => {
+                return Ok(tonic::Response::new(pb::Document {
+                    name: name.clone(),
+                    ..Default::default()
+                }));
+            }
+            result => result.map_err(|e| call.mapped(e))?,
+        };
+        call.after_delete(&name).await?;
         Ok(tonic::Response::new(out))
     }
 
@@ -136,7 +259,6 @@ impl pb::documents_server::Documents for DocumentsServer {
     ) -> Result<tonic::Response<()>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.document;
         let spec = servicex::ResourceSpec {
             message: "archive.v1.Document",
             resource_type: "archive.example/Document",
@@ -147,9 +269,13 @@ impl pb::documents_server::Documents for DocumentsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("archive.v1");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        call.purge(&req.name).await?;
-        let out = ();
+        let call = servicex::Call::new(self.document_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.purge_document, "PurgeDocument")?;
+        call.name(&req.name)?;
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -157,27 +283,43 @@ impl pb::documents_server::Documents for DocumentsServer {
         &self,
         request: tonic::Request<pb::GetDocumentRequest>,
     ) -> Result<tonic::Response<pb::Document>, tonic::Status> {
-        self.custom.get_document_by_hand(request).await
+        let ctx = servicex::Context::from_request(&request);
+        let out = servicex::handler(&self.handlers.get_document_by_hand, "GetDocumentByHand")?
+            .call(ctx, request.into_inner())
+            .await?;
+        Ok(tonic::Response::new(out))
     }
 
     async fn undelete_document(
         &self,
         request: tonic::Request<pb::UndeleteDocumentRequest>,
     ) -> Result<tonic::Response<pb::Document>, tonic::Status> {
-        self.custom.undelete_document(request).await
+        let ctx = servicex::Context::from_request(&request);
+        let out = servicex::handler(&self.handlers.undelete_document, "UndeleteDocument")?
+            .call(ctx, request.into_inner())
+            .await?;
+        Ok(tonic::Response::new(out))
     }
 
     async fn list_pages(
         &self,
         request: tonic::Request<pb::ListPagesRequest>,
     ) -> Result<tonic::Response<pb::ListPagesResponse>, tonic::Status> {
-        self.custom.list_pages(request).await
+        let ctx = servicex::Context::from_request(&request);
+        let out = servicex::handler(&self.handlers.list_pages, "ListPages")?
+            .call(ctx, request.into_inner())
+            .await?;
+        Ok(tonic::Response::new(out))
     }
 
     async fn get_settings(
         &self,
         request: tonic::Request<pb::GetSettingsRequest>,
     ) -> Result<tonic::Response<pb::Settings>, tonic::Status> {
-        self.custom.get_settings(request).await
+        let ctx = servicex::Context::from_request(&request);
+        let out = servicex::handler(&self.handlers.get_settings, "GetSettings")?
+            .call(ctx, request.into_inner())
+            .await?;
+        Ok(tonic::Response::new(out))
     }
 }

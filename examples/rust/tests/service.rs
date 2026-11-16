@@ -18,6 +18,7 @@ use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
 };
+use sx::Repository as _;
 use tonic::{Code, Request, Status};
 
 fn options() -> sx::Options {
@@ -211,8 +212,129 @@ impl<M: Message + Default + Clone + Send + Sync + 'static> sx::Repository<M> for
         Ok(())
     }
 }
+// The application's half of the contract: one handler per RPC, the request in
+// and the response out, here over the in-memory store standing in for a
+// database layer.
+fn organization_handlers(repo: Memory<directory::Organization>) -> ds::OrganizationsHandlers {
+    let (get, list, create, update, delete, undelete) = (
+        repo.clone(),
+        repo.clone(),
+        repo.clone(),
+        repo.clone(),
+        repo.clone(),
+        repo,
+    );
+    ds::OrganizationsHandlers::default()
+        .get_organization(move |ctx, req: directory::GetOrganizationRequest| {
+            let r = get.clone();
+            async move { r.get(&ctx, &req.name).await }
+        })
+        .list_organizations(move |ctx, req: directory::ListOrganizationsRequest| {
+            let r = list.clone();
+            async move {
+                let input = sx::ListInput {
+                    page_size: req.page_size,
+                    page_token: req.page_token,
+                    show_deleted: req.show_deleted,
+                    ..Default::default()
+                };
+                let (organizations, next_page_token) = r.list(&ctx, "", input).await?;
+                Ok(directory::ListOrganizationsResponse {
+                    organizations,
+                    next_page_token,
+                })
+            }
+        })
+        .create_organization(move |ctx, req: directory::CreateOrganizationRequest| {
+            let r = create.clone();
+            async move {
+                r.create(&ctx, "", req.organization.unwrap_or_default())
+                    .await
+            }
+        })
+        .update_organization(move |ctx, req: directory::UpdateOrganizationRequest| {
+            let r = update.clone();
+            async move {
+                let body = req.organization.unwrap_or_default();
+                let paths = req.update_mask.map(|m| m.paths).unwrap_or_default();
+                match r.update(&ctx, body.clone(), paths).await {
+                    // allow_missing: the server prepared a create.
+                    Err(e) if e.code() == Code::NotFound && req.allow_missing => {
+                        r.create(&ctx, "", body).await
+                    }
+                    result => result,
+                }
+            }
+        })
+        .delete_organization(move |ctx, req: directory::DeleteOrganizationRequest| {
+            let r = delete.clone();
+            async move { r.delete(&ctx, &req.name, &req.etag).await.map(|_| ()) }
+        })
+        .undelete_organization(move |ctx, req: directory::UndeleteOrganizationRequest| {
+            let r = undelete.clone();
+            async move { r.undelete(&ctx, &req.name, "").await }
+        })
+}
+fn calendar_handlers(repo: Memory<calendar::Calendar>) -> cs::CalendarsHandlers {
+    let (get, list, create, update, delete, undelete) = (
+        repo.clone(),
+        repo.clone(),
+        repo.clone(),
+        repo.clone(),
+        repo.clone(),
+        repo,
+    );
+    cs::CalendarsHandlers::default()
+        .get_calendar(move |ctx, req: calendar::GetCalendarRequest| {
+            let r = get.clone();
+            async move { r.get(&ctx, &req.name).await }
+        })
+        .list_calendars(move |ctx, req: calendar::ListCalendarsRequest| {
+            let r = list.clone();
+            async move {
+                let input = sx::ListInput {
+                    page_size: req.page_size,
+                    page_token: req.page_token,
+                    ..Default::default()
+                };
+                let (calendars, next_page_token) = r.list(&ctx, "", input).await?;
+                Ok(calendar::ListCalendarsResponse {
+                    calendars,
+                    next_page_token,
+                })
+            }
+        })
+        .create_calendar(move |ctx, req: calendar::CreateCalendarRequest| {
+            let r = create.clone();
+            async move { r.create(&ctx, "", req.calendar.unwrap_or_default()).await }
+        })
+        .update_calendar(move |ctx, req: calendar::UpdateCalendarRequest| {
+            let r = update.clone();
+            async move {
+                let paths = req.update_mask.map(|m| m.paths).unwrap_or_default();
+                r.update(&ctx, req.calendar.unwrap_or_default(), paths)
+                    .await
+            }
+        })
+        .delete_calendar(move |ctx, req: calendar::DeleteCalendarRequest| {
+            let r = delete.clone();
+            async move {
+                let out = r.delete(&ctx, &req.name, &req.etag).await?;
+                Ok(out.unwrap_or_default())
+            }
+        })
+        .undelete_calendar(move |ctx, req: calendar::UndeleteCalendarRequest| {
+            let r = undelete.clone();
+            async move { r.undelete(&ctx, &req.name, &req.etag).await }
+        })
+        // A custom method: business logic, reading the caller's metadata.
+        .query_free_busy(|ctx, _req: calendar::QueryFreeBusyRequest| async move {
+            assert_eq!(ctx.metadata.get("x-tenant").unwrap(), "acme");
+            Ok(calendar::QueryFreeBusyResponse { busy: 42 })
+        })
+}
 fn server(repo: Memory<directory::Organization>) -> ds::OrganizationsServer {
-    ds::OrganizationsServer::new(options(), sx::Resource::new(repo))
+    ds::OrganizationsServer::new(options(), organization_handlers(repo)).unwrap()
 }
 async fn create(s: &ds::OrganizationsServer, id: &str) -> directory::Organization {
     s.create_organization(Request::new(directory::CreateOrganizationRequest {
@@ -409,7 +531,7 @@ async fn undelete_dry_run_validates_state() {
             ..Default::default()
         },
     );
-    let server = cs::CalendarsServer::new(options(), sx::Resource::new(repo));
+    let server = cs::CalendarsServer::new(options(), calendar_handlers(repo)).unwrap();
     assert_eq!(
         server
             .undelete_calendar(Request::new(calendar::UndeleteCalendarRequest {
@@ -423,26 +545,13 @@ async fn undelete_dry_run_validates_state() {
         Code::AlreadyExists
     );
 }
-struct Custom;
-#[tonic::async_trait]
-impl cs::CalendarsCustom for Custom {
-    async fn query_free_busy(
-        &self,
-        request: Request<calendar::QueryFreeBusyRequest>,
-    ) -> Result<tonic::Response<calendar::QueryFreeBusyResponse>, Status> {
-        assert_eq!(request.metadata().get("x-tenant").unwrap(), "acme");
-        Ok(tonic::Response::new(calendar::QueryFreeBusyResponse {
-            busy: 42,
-        }))
-    }
-}
 #[tokio::test]
 async fn custom_methods_preserve_request_metadata() {
     let server = cs::CalendarsServer::new(
         options(),
-        sx::Resource::new(Memory::new("acme.calendar.v1.Calendar")),
+        calendar_handlers(Memory::new("acme.calendar.v1.Calendar")),
     )
-    .with_custom(Custom);
+    .unwrap();
     let mut request = Request::new(calendar::QueryFreeBusyRequest::default());
     request
         .metadata_mut()
@@ -612,10 +721,9 @@ impl sx::Hooks<directory::Organization> for ConcurrentDelete {
 #[tokio::test]
 async fn delete_checks_etag_in_the_mutation_after_hooks() {
     let repo = Memory::new("acme.directory.v1.Organization");
-    let s = ds::OrganizationsServer::new(
-        options(),
-        sx::Resource::new(repo.clone()).with_hooks(ConcurrentDelete { repo }),
-    );
+    let s = ds::OrganizationsServer::new(options(), organization_handlers(repo.clone()))
+        .unwrap()
+        .with_organization_hooks(ConcurrentDelete { repo });
     let created = create(&s, "race").await;
     let err = s
         .delete_organization(Request::new(directory::DeleteOrganizationRequest {
@@ -636,4 +744,19 @@ async fn delete_checks_etag_in_the_mutation_after_hooks() {
         .delete_time
         .is_none()
     );
+}
+
+// A server is never built with an RPC that nothing answers.
+#[test]
+fn a_missing_handler_refuses_the_server() {
+    let handlers = organization_handlers(Memory::new("acme.directory.v1.Organization"));
+    let mut partial = handlers.clone();
+    partial.undelete_organization = None;
+    partial.list_organizations = None;
+    let err = ds::OrganizationsServer::new(options(), partial)
+        .err()
+        .unwrap();
+    assert_eq!(err.service, "acme.directory.v1.Organizations");
+    assert_eq!(err.methods, ["ListOrganizations", "UndeleteOrganization"]);
+    assert!(ds::OrganizationsServer::new(options(), handlers).is_ok());
 }

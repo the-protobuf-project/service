@@ -13,45 +13,115 @@
 use crate::pb::acme::booking::v1 as pb;
 use crate::service::servicex;
 
-/// Custom RPC handlers for Reservations. Override the methods your application serves.
-#[tonic::async_trait]
-pub trait ReservationsCustom: Send + Sync {
-    async fn create_reservation(
-        &self,
-        _request: tonic::Request<pb::CreateReservationRequest>,
-    ) -> Result<tonic::Response<pb::Reservation>, tonic::Status> {
-        Err(tonic::Status::unimplemented("CreateReservation"))
+/// The handlers of acme.booking.v1.Reservations: one per RPC, the request message in and the response
+/// message out -- the database layer, a call to another service, any business logic.
+/// The server runs the generated checks and hooks of a standard method around its handler.
+#[derive(Default, Clone)]
+pub struct ReservationsHandlers {
+    /// GetReservation.
+    pub get_reservation: Option<servicex::Handler<pb::GetReservationRequest, pb::Reservation>>,
+    /// ListReservations.
+    pub list_reservations:
+        Option<servicex::Handler<pb::ListReservationsRequest, pb::ListReservationsResponse>>,
+    /// CreateReservation.
+    pub create_reservation:
+        Option<servicex::Handler<pb::CreateReservationRequest, pb::Reservation>>,
+    /// UpdateReservation.
+    pub update_reservation:
+        Option<servicex::Handler<pb::UpdateReservationRequest, pb::Reservation>>,
+}
+
+impl ReservationsHandlers {
+    /// Registers the handler of GetReservation.
+    pub fn get_reservation<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::GetReservationRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Reservation, tonic::Status>> + Send + 'static,
+    {
+        self.get_reservation = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of ListReservations.
+    pub fn list_reservations<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::ListReservationsRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::ListReservationsResponse, tonic::Status>>
+            + Send
+            + 'static,
+    {
+        self.list_reservations = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of CreateReservation.
+    pub fn create_reservation<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::CreateReservationRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Reservation, tonic::Status>> + Send + 'static,
+    {
+        self.create_reservation = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of UpdateReservation.
+    pub fn update_reservation<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::UpdateReservationRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Reservation, tonic::Status>> + Send + 'static,
+    {
+        self.update_reservation = Some(servicex::Handler::new(f));
+        self
+    }
+    /// The RPCs no handler is registered for.
+    pub fn missing(&self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.get_reservation.is_none() {
+            out.push("GetReservation");
+        }
+        if self.list_reservations.is_none() {
+            out.push("ListReservations");
+        }
+        if self.create_reservation.is_none() {
+            out.push("CreateReservation");
+        }
+        if self.update_reservation.is_none() {
+            out.push("UpdateReservation");
+        }
+        out
     }
 }
 
-/// Default custom handlers returning `Unimplemented`.
-pub struct NopReservationsCustom;
-
-impl ReservationsCustom for NopReservationsCustom {}
-
-/// Generated server backed by typed repositories and application hooks.
+/// acme.booking.v1.Reservations's server: each standard method's generated checks and hooks around its
+/// registered handler, and every custom method straight to its own.
 pub struct ReservationsServer {
     pub options: servicex::Options,
-    pub custom: std::sync::Arc<dyn ReservationsCustom>,
-    pub reservation: servicex::Resource<pb::Reservation>,
+    handlers: ReservationsHandlers,
+    reservation_hooks: std::sync::Arc<dyn servicex::Hooks<pb::Reservation>>,
 }
 
 impl ReservationsServer {
-    /// Creates a server over the supplied resources.
+    /// Builds the server over handlers, refusing one that leaves an RPC without a handler.
     pub fn new(
         options: servicex::Options,
-        reservation: servicex::Resource<pb::Reservation>,
-    ) -> Self {
-        Self {
-            options,
-            reservation,
-            custom: std::sync::Arc::new(NopReservationsCustom),
+        handlers: ReservationsHandlers,
+    ) -> Result<Self, servicex::MissingHandlers> {
+        let methods = handlers.missing();
+        if !methods.is_empty() {
+            return Err(servicex::MissingHandlers {
+                service: "acme.booking.v1.Reservations",
+                methods,
+            });
         }
+        Ok(Self {
+            options,
+            handlers,
+            reservation_hooks: std::sync::Arc::new(servicex::NopHooks),
+        })
     }
-
-    /// Installs the application's custom RPC handlers.
-    pub fn with_custom(mut self, custom: impl ReservationsCustom + 'static) -> Self {
-        self.custom = std::sync::Arc::new(custom);
+    /// Sets the hooks around Reservation's standard methods.
+    pub fn with_reservation_hooks(
+        mut self,
+        hooks: impl servicex::Hooks<pb::Reservation> + 'static,
+    ) -> Self {
+        self.reservation_hooks = std::sync::Arc::new(hooks);
         self
     }
     /// Wraps this server for registration with tonic.
@@ -68,7 +138,6 @@ impl pb::reservations_server::Reservations for ReservationsServer {
     ) -> Result<tonic::Response<pb::Reservation>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.reservation;
         let spec = servicex::ResourceSpec {
             message: "acme.booking.v1.Reservation",
             resource_type: "booking.acme.example/Reservation",
@@ -85,8 +154,13 @@ impl pb::reservations_server::Reservations for ReservationsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("booking.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let out = call.get(&req.name).await?;
+        let call = servicex::Call::new(self.reservation_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.get_reservation, "GetReservation")?;
+        call.name(&req.name)?;
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -96,7 +170,6 @@ impl pb::reservations_server::Reservations for ReservationsServer {
     ) -> Result<tonic::Response<pb::ListReservationsResponse>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.reservation;
         let spec = servicex::ResourceSpec {
             message: "acme.booking.v1.Reservation",
             resource_type: "booking.acme.example/Reservation",
@@ -113,24 +186,13 @@ impl pb::reservations_server::Reservations for ReservationsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("booking.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let (items, next) = call
-            .list(
-                &req.parent,
-                servicex::ListInput {
-                    page_size: req.page_size,
-                    page_token: req.page_token,
-                    filter: String::new(),
-                    order_by: String::new(),
-                    show_deleted: false,
-                    read_mask: Vec::new(),
-                },
-            )
-            .await?;
-        let out = pb::ListReservationsResponse {
-            reservations: items,
-            next_page_token: next,
-        };
+        let call = servicex::Call::new(self.reservation_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.list_reservations, "ListReservations")?;
+        call.list(&req.parent, req.page_size).await?;
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -138,7 +200,11 @@ impl pb::reservations_server::Reservations for ReservationsServer {
         &self,
         request: tonic::Request<pb::CreateReservationRequest>,
     ) -> Result<tonic::Response<pb::Reservation>, tonic::Status> {
-        self.custom.create_reservation(request).await
+        let ctx = servicex::Context::from_request(&request);
+        let out = servicex::handler(&self.handlers.create_reservation, "CreateReservation")?
+            .call(ctx, request.into_inner())
+            .await?;
+        Ok(tonic::Response::new(out))
     }
 
     async fn update_reservation(
@@ -146,8 +212,7 @@ impl pb::reservations_server::Reservations for ReservationsServer {
         request: tonic::Request<pb::UpdateReservationRequest>,
     ) -> Result<tonic::Response<pb::Reservation>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
-        let req = request.into_inner();
-        let resource = &self.reservation;
+        let mut req = request.into_inner();
         let spec = servicex::ResourceSpec {
             message: "acme.booking.v1.Reservation",
             resource_type: "booking.acme.example/Reservation",
@@ -164,13 +229,63 @@ impl pb::reservations_server::Reservations for ReservationsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("booking.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let body = req.reservation.ok_or_else(|| {
+        let call = servicex::Call::new(self.reservation_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.update_reservation, "UpdateReservation")?;
+        let body = req.reservation.clone().ok_or_else(|| {
             options.bad_field("REQUIRED_FIELD", "reservation", "resource is required")
         })?;
-        let out = call
-            .update(body, req.update_mask.map(|m| m.paths), false, false)
-            .await?;
+        let existing = match &self.handlers.get_reservation {
+            Some(get) => Some(
+                get.call(
+                    ctx.clone(),
+                    pb::GetReservationRequest {
+                        name: body.name.clone(),
+                    },
+                )
+                .await,
+            ),
+            None => None,
+        };
+        let dry = false;
+        let out = match call
+            .update(
+                body,
+                req.update_mask.clone().map(|m| m.paths),
+                false,
+                existing,
+            )
+            .await?
+        {
+            servicex::Update::Create(value) => {
+                if dry {
+                    return Ok(tonic::Response::new(value));
+                }
+                req.reservation = Some(value);
+                let out = handler
+                    .call(ctx.clone(), req)
+                    .await
+                    .map_err(|e| call.mapped(e))?;
+                call.after_create(&out).await?;
+                out
+            }
+            servicex::Update::Write {
+                value,
+                paths,
+                preview,
+            } => {
+                if dry {
+                    return Ok(tonic::Response::new(preview));
+                }
+                req.reservation = Some(value);
+                req.update_mask = Some(prost_types::FieldMask { paths });
+                let out = handler
+                    .call(ctx.clone(), req)
+                    .await
+                    .map_err(|e| call.mapped(e))?;
+                call.after_update(&out).await?;
+                out
+            }
+        };
         Ok(tonic::Response::new(out))
     }
 }
