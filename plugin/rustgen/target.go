@@ -54,6 +54,9 @@ type Settings struct {
 	ServiceModule string
 	// ErrorDomain overrides the service's google.api.default_host.
 	ErrorDomain string
+	// App, when set, also renders the application shell of that name under
+	// app/ (see app.go).
+	App string
 }
 type Target struct {
 	Settings Settings
@@ -166,6 +169,14 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 			}
 		}
 	}
+	if t.Settings.App != "" {
+		if tree.children["app"] != nil {
+			return fmt.Errorf("service: app=%s: a proto package named app conflicts with the Rust app module", t.Settings.App)
+		}
+		if err := t.renderApp(p, model); err != nil {
+			return err
+		}
+	}
 	return t.modules(p, tree, "")
 }
 
@@ -178,6 +189,9 @@ func (t *Target) modules(p *protogen.Plugin, n *moduleNode, dir string) error {
 	var out strings.Builder
 	if dir == "" {
 		out.WriteString("pub mod servicex;\n\n")
+		if t.Settings.App != "" {
+			out.WriteString("pub mod app;\n\n")
+		}
 	}
 	sort.Strings(n.exports)
 	seen := map[string]bool{}

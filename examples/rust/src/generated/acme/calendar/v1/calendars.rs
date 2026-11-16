@@ -167,6 +167,14 @@ impl CalendarsServer {
         self.calendar_hooks = std::sync::Arc::new(hooks);
         self
     }
+    /// Sets hooks shared with other owners around Calendar's standard methods.
+    pub fn with_calendar_hooks_shared(
+        mut self,
+        hooks: std::sync::Arc<dyn servicex::Hooks<pb::Calendar>>,
+    ) -> Self {
+        self.calendar_hooks = hooks;
+        self
+    }
     /// Wraps this server for registration with tonic.
     pub fn into_service(self) -> pb::calendars_server::CalendarsServer<Self> {
         pb::calendars_server::CalendarsServer::new(self)

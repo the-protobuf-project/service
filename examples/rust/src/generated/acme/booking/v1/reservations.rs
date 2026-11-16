@@ -124,6 +124,14 @@ impl ReservationsServer {
         self.reservation_hooks = std::sync::Arc::new(hooks);
         self
     }
+    /// Sets hooks shared with other owners around Reservation's standard methods.
+    pub fn with_reservation_hooks_shared(
+        mut self,
+        hooks: std::sync::Arc<dyn servicex::Hooks<pb::Reservation>>,
+    ) -> Self {
+        self.reservation_hooks = hooks;
+        self
+    }
     /// Wraps this server for registration with tonic.
     pub fn into_service(self) -> pb::reservations_server::ReservationsServer<Self> {
         pb::reservations_server::ReservationsServer::new(self)

@@ -270,6 +270,31 @@ metadata.
 Change feeds and the event and idempotency record adapters read through the
 `servicex::Repository<M>` trait, implemented over the same persistence layer.
 
+`app=<name>` also generates the Rust application shell under `app/`, over
+runtime-rs (`tpp-config`, `tpp-grpc`):
+
+| Item | What |
+|---|---|
+| `app::config` | `AppConfig` (identity; the server's listeners, MCP, TLS, CORS and shutdown) with its `Validate` check; `loader()` over the embedded `<name>.release.toml` and `<name>.dev.toml`, then files and `<NAME>_SECTION__KEY` variables, which override everything; `load()` |
+| `app::Handlers`, `app::Hooks` | Every service's handlers and every resource's hooks, in one place |
+| `app::assemble` | Every server built from them, or `MissingHandlers` for every service with an RPC left unanswered |
+| `app::hybrid_server` | Every service on runtime-rs's hybrid gRPC/REST/MCP server, with reflection and buf.validate over the descriptors, and CORS, TLS, MCP and the shutdown timeout from the configuration |
+| `app::run` | Load, assemble, serve until SIGINT or SIGTERM, stop gracefully |
+
+```rust
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut handlers = app::Handlers::default();
+    handlers.organizations = handlers.organizations.get_organization(|ctx, req| async move { db.get(&req.name).await });
+    // ... one per RPC
+    app::run(app::Provision::new(DESCRIPTORS, handlers)).await?;
+    Ok(())
+}
+```
+
+The crate depends on `tpp-config` and `tpp-grpc` (with its `tls` feature), and
+`serde` with `derive`.
+
 The Rust target uses tonic 0.14, prost/prost-types 0.14, tonic-types 0.14,
 prost-reflect 0.16 with `serde`, futures-core 0.3, and serde_json 1. See the
 [compilable Rust example](examples/rust) for dependencies and behavior tests.

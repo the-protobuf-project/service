@@ -162,6 +162,14 @@ impl EventsServer {
         self.event_hooks = std::sync::Arc::new(hooks);
         self
     }
+    /// Sets hooks shared with other owners around Event's standard methods.
+    pub fn with_event_hooks_shared(
+        mut self,
+        hooks: std::sync::Arc<dyn servicex::Hooks<pb::Event>>,
+    ) -> Self {
+        self.event_hooks = hooks;
+        self
+    }
     /// Wraps this server for registration with tonic.
     pub fn into_service(self) -> pb::events_server::EventsServer<Self> {
         pb::events_server::EventsServer::new(self)

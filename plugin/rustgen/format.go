@@ -40,6 +40,11 @@ func formatRust(source string) ([]byte, error) {
 	return formatted, nil
 }
 
+// banner is the provenance header of a generated file.
+func (t *Target) banner(p *protogen.Plugin, sources []string, note string) string {
+	return generator.Banner(p, t.Versions, sources, note)
+}
+
 func (t *Target) emit(p *protogen.Plugin, name string, sources []string, note, body string) error {
 	source := generator.Banner(p, t.Versions, sources, note) + "\n\n" + body
 	formatted, err := formatRust(source)

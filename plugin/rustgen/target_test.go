@@ -52,7 +52,7 @@ func TestRustExamples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = protokit.RunPlugin(p, protokit.Options{Target: rustgen.TargetName}, testPlugin(rustgen.Settings{}, nil)); err != nil {
+	if err = protokit.RunPlugin(p, protokit.Options{Target: rustgen.TargetName}, testPlugin(rustgen.Settings{App: "acme"}, nil)); err != nil {
 		t.Fatal(err)
 	}
 	root := filepath.Join("..", "..", "examples", "rust")

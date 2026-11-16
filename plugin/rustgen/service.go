@@ -53,6 +53,7 @@ func (t *Target) service(b *strings.Builder, s *spec.Service) error {
 	for _, r := range s.Resources {
 		res := ident(r.Message.GoIdent.GoName)
 		fmt.Fprintf(b, "/// Sets the hooks around %s's standard methods.\npub fn with_%s_hooks(mut self, hooks: impl servicex::Hooks<%s> + 'static) -> Self {\nself.%s_hooks = std::sync::Arc::new(hooks);\nself\n}\n", r.Message.GoIdent.GoName, res, t.typ(r.Message), res)
+		fmt.Fprintf(b, "/// Sets hooks shared with other owners around %s's standard methods.\npub fn with_%s_hooks_shared(mut self, hooks: std::sync::Arc<dyn servicex::Hooks<%s>>) -> Self {\nself.%s_hooks = hooks;\nself\n}\n", r.Message.GoIdent.GoName, res, t.typ(r.Message), res)
 	}
 	fmt.Fprintf(b, "/// Wraps this server for registration with tonic.\npub fn into_service(self) -> %s_server::%sServer<Self> { %s_server::%sServer::new(self) }\n}\n\n", pb+"::"+ident(service), service, pb+"::"+ident(service), service)
 

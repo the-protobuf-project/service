@@ -176,6 +176,14 @@ impl OrganizationalUnitsServer {
         self.organizational_unit_hooks = std::sync::Arc::new(hooks);
         self
     }
+    /// Sets hooks shared with other owners around OrganizationalUnit's standard methods.
+    pub fn with_organizational_unit_hooks_shared(
+        mut self,
+        hooks: std::sync::Arc<dyn servicex::Hooks<pb::OrganizationalUnit>>,
+    ) -> Self {
+        self.organizational_unit_hooks = hooks;
+        self
+    }
     /// Wraps this server for registration with tonic.
     pub fn into_service(self) -> pb::organizational_units_server::OrganizationalUnitsServer<Self> {
         pb::organizational_units_server::OrganizationalUnitsServer::new(self)

@@ -163,6 +163,14 @@ impl DocumentsServer {
         self.document_hooks = std::sync::Arc::new(hooks);
         self
     }
+    /// Sets hooks shared with other owners around Document's standard methods.
+    pub fn with_document_hooks_shared(
+        mut self,
+        hooks: std::sync::Arc<dyn servicex::Hooks<pb::Document>>,
+    ) -> Self {
+        self.document_hooks = hooks;
+        self
+    }
     /// Wraps this server for registration with tonic.
     pub fn into_service(self) -> pb::documents_server::DocumentsServer<Self> {
         pb::documents_server::DocumentsServer::new(self)

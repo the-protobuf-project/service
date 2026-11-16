@@ -92,7 +92,7 @@ func main() {
 	mcp := flags.Bool("mcp", true, "register protoc-gen-mcp's Serve<Service>MCP for each service")
 	domain := flags.String("error_domain", "", "google.rpc.ErrorInfo domain; default each service's google.api.default_host")
 	strict := flags.String("strict", "", "per-rule severity for schema problems, as protoc-gen-store takes it")
-	app := flags.String("app", "", "also generate the application shell of this name: config, telemetry, database, assembly, registration, cmd/<app>")
+	app := flags.String("app", "", "also generate the application shell of this name: configuration, assembly and registration on the hybrid server (Go: plus telemetry, database and cmd/<app>; Rust: under app/)")
 
 	run(protogen.Options{ParamFunc: flags.Set}, func(p *protogen.Plugin) error {
 		p.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)
@@ -102,7 +102,7 @@ func main() {
 		}
 		if *language == "rust" {
 			return protokit.RunPlugin(p, protokit.Options{Target: rustgen.TargetName, Strict: *strict, Version: v},
-				rustgen.Plugin(rustgen.Settings{ProtoModule: *rustProtoModule, ServiceModule: *rustServiceModule, ErrorDomain: *domain}, cfg, generator.ResolveVersions(v)))
+				rustgen.Plugin(rustgen.Settings{ProtoModule: *rustProtoModule, ServiceModule: *rustServiceModule, ErrorDomain: *domain, App: *app}, cfg, generator.ResolveVersions(v)))
 		}
 		if *language != "go" {
 			return fmt.Errorf("service: unsupported lang %q (use go or rust)", *language)
