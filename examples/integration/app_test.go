@@ -5,7 +5,9 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 
+	"github.com/the-protobuf-project/service/examples/generated/go/acme/activity/v1"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/booking/v1"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/calendar/v1"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/directory/v1"
@@ -54,6 +57,56 @@ func (logic) ExpandEvent(context.Context, *calendarv1.ExpandEventRequest) (*cale
 	return &calendarv1.ExpandEventResponse{}, nil
 }
 
+// WatchCalendar streams two changes of the calendar, or refuses one that is
+// not there with a problem the server's translator renders.
+func (logic) WatchCalendar(req *activityv1.WatchCalendarRequest, stream grpc.ServerStreamingServer[activityv1.WatchCalendarResponse]) error {
+	if req.GetCalendar() == "calendars/none" {
+		return servicex.Blocked("CALENDAR_NOT_WATCHABLE", "calendar.acme.example/Calendar", req.GetCalendar(), "nothing to watch", "Watch a calendar that exists")
+	}
+	if stream.Context() == nil {
+		return errors.New("the stream lost its context")
+	}
+	for _, change := range []string{"created", "updated"} {
+		if err := stream.Send(&activityv1.WatchCalendarResponse{Event: req.GetCalendar() + "/events/e", Change: change}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ImportEvents counts the events the client sends, answering once it is done.
+func (logic) ImportEvents(stream grpc.ClientStreamingServer[activityv1.ImportEventsRequest, activityv1.ImportEventsResponse]) error {
+	n := int32(0)
+	for {
+		_, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return stream.SendAndClose(&activityv1.ImportEventsResponse{ImportedCount: n})
+		}
+		if err != nil {
+			return err
+		}
+		n++
+	}
+}
+
+// SyncEvents answers each change as it arrives with the count applied so far.
+func (logic) SyncEvents(stream grpc.BidiStreamingServer[activityv1.SyncEventsRequest, activityv1.SyncEventsResponse]) error {
+	n := int32(0)
+	for {
+		req, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		n++
+		if err := stream.Send(&activityv1.SyncEventsResponse{Calendar: req.GetCalendar(), AppliedCount: n}); err != nil {
+			return err
+		}
+	}
+}
+
 // countingHooks counts the organizations created, through a provisioned hook.
 type countingHooks struct {
 	directoryv1svc.NopOrganizationsHooks
@@ -70,7 +123,7 @@ func provision(created *int) server.Provider {
 		l := logic{repos: d.Repos}
 		return server.Provision{
 			Hooks: server.Hooks{Organizations: countingHooks{created: created}},
-			Logic: server.Logic{Holds: l, Reservations: l, Calendars: l, Events: l},
+			Logic: server.Logic{Holds: l, Reservations: l, Calendars: l, Events: l, Activity: l},
 		}, nil
 	}
 }
@@ -82,7 +135,7 @@ func TestShellRefusesAnIncompleteProvision(t *testing.T) {
 	if err == nil {
 		t.Fatal("an empty provision was accepted")
 	}
-	for _, want := range []string{"Logic.Holds", "Logic.Reservations", "Logic.Calendars", "Logic.Events"} {
+	for _, want := range []string{"Logic.Holds", "Logic.Reservations", "Logic.Calendars", "Logic.Events", "Logic.Activity"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error does not name %s: %v", want, err)
 		}
@@ -161,4 +214,74 @@ func TestShellPurges(t *testing.T) {
 	_, err = orgs.GetOrganization(c, &directoryv1.GetOrganizationRequest{Name: "organizations/gone"})
 	wantStatus(t, err, codes.NotFound, servicex.ReasonNotFound)
 	must(orgs.GetOrganization(c, &directoryv1.GetOrganizationRequest{Name: "organizations/kept"}))
+}
+
+// TestShellStreams serves the streaming service through the shell and calls
+// every shape as a client does: the server's, the client's and both, and a
+// stream that fails with a problem the translator renders in the service's
+// domain.
+func TestShellStreams(t *testing.T) {
+	srv, _, err := server.NewGRPCServer(&database.Connection{PgSQLConn: open(t).Gorm}, provision(new(int)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lis := bufconn.Listen(1 << 20)
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.Stop)
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	c, client := ctx(t), activityv1.NewActivityClient(conn)
+
+	// Server streaming.
+	watch := must(client.WatchCalendar(c, &activityv1.WatchCalendarRequest{Calendar: "calendars/rooms"}))
+	var changes []string
+	for {
+		msg, err := watch.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		changes = append(changes, msg.GetChange())
+	}
+	if strings.Join(changes, ",") != "created,updated" {
+		t.Fatalf("watched %v", changes)
+	}
+	failed := must(client.WatchCalendar(c, &activityv1.WatchCalendarRequest{Calendar: "calendars/none"}))
+	_, err = failed.Recv()
+	st := wantStatus(t, err, codes.FailedPrecondition, "CALENDAR_NOT_WATCHABLE")
+	if domainOf(st) != "activity.acme.example" {
+		t.Errorf("domain %q, want the Activity service's", domainOf(st))
+	}
+
+	// Client streaming.
+	upload := must(client.ImportEvents(c))
+	for i := range 3 {
+		if err := upload.Send(&activityv1.ImportEventsRequest{Calendar: "calendars/rooms", Summary: fmt.Sprint("e", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := must(upload.CloseAndRecv()).GetImportedCount(); got != 3 {
+		t.Fatalf("imported %d, want 3", got)
+	}
+
+	// Bidirectional streaming: each answer arrives before the next send.
+	sync := must(client.SyncEvents(c))
+	for i := int32(1); i <= 2; i++ {
+		if err := sync.Send(&activityv1.SyncEventsRequest{Calendar: "calendars/rooms", Change: "moved"}); err != nil {
+			t.Fatal(err)
+		}
+		if got := must(sync.Recv()).GetAppliedCount(); got != i {
+			t.Fatalf("applied %d, want %d", got, i)
+		}
+	}
+	if err := sync.CloseSend(); err != nil {
+		t.Fatal(err)
+	}
 }

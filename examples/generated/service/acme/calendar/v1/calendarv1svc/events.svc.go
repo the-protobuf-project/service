@@ -5,8 +5,8 @@
 // source: acme/calendar/v1/calendar.proto
 //
 // AIP standard-method server for acme.calendar.v1.Events.
-// annotations: entity.v1 v1.6.9, service.v1 dev
-// engine:      protokit v1.3.8
+// annotations: entity.v1 v1.7.1, service.v1 dev
+// engine:      protokit v1.4.0
 //
 // service — https://github.com/the-protobuf-project/service
 
@@ -141,6 +141,9 @@ func (s *EventsServer) Repositories() EventsRepositories { return s.repos }
 // methods. The server runs each through Options().Run, traced and with its
 // error rendered by the translator, so an implementation returns plain errors:
 // a *problem.Problem, an error wrapping a registered sentinel, or a status.
+//
+// A streaming method's stream carries the traced context: its Context is
+// the one the method runs in.
 type EventsLogic interface {
 	ExpandEvent(ctx context.Context, req *calendarv1.ExpandEventRequest) (*calendarv1.ExpandEventResponse, error)
 }

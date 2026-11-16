@@ -11,13 +11,19 @@ import (
 	"google.golang.org/protobuf/compiler/protogen"
 )
 
+// identRune reports whether c may stand at position i of a Rust identifier:
+// a letter or underscore, or a digit after the first position.
+func identRune(i int, c rune) bool {
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || i > 0 && c >= '0' && c <= '9'
+}
+
 func validModule(s string) bool {
 	for _, part := range strings.Split(s, "::") {
 		if part == "" {
 			return false
 		}
 		for i, c := range part {
-			if !(c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || i > 0 && c >= '0' && c <= '9') {
+			if !identRune(i, c) {
 				return false
 			}
 		}

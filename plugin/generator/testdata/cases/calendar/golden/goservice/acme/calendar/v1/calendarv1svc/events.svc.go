@@ -141,6 +141,9 @@ func (s *EventsServer) Repositories() EventsRepositories { return s.repos }
 // methods. The server runs each through Options().Run, traced and with its
 // error rendered by the translator, so an implementation returns plain errors:
 // a *problem.Problem, an error wrapping a registered sentinel, or a status.
+//
+// A streaming method's stream carries the traced context: its Context is
+// the one the method runs in.
 type EventsLogic interface {
 	ExpandEvent(ctx context.Context, req *calendarv1.ExpandEventRequest) (*calendarv1.ExpandEventResponse, error)
 }

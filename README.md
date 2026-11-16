@@ -192,8 +192,12 @@ func provision(d *server.Deps) (server.Provision, error) {
 func main() { app.Main(app.Options{Provider: provision}) }
 ```
 
-Every unary custom method is a method of a generated `<S>Logic` interface,
-run through the server's tracer and translator. A custom method with no
+Every custom method, unary or streaming, is a method of a generated
+`<S>Logic` interface, run through the server's tracer and translator. A
+streaming method takes grpc-go's stream (`grpc.ServerStreamingServer[Resp]`,
+`grpc.ClientStreamingServer[Req, Resp]`, `grpc.BidiStreamingServer[Req, Resp]`)
+whose `Context` is the traced one; an error it returns reaches the client as a
+translated status. A custom method with no
 `Logic` (and no override) stops the assembly at startup with the list of what
 is missing; the generated `cmd/<name>` is a skeleton and opts out with
 `Provision{Unimplemented: true}`, serving those as UNIMPLEMENTED.

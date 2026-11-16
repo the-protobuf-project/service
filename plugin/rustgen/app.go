@@ -94,11 +94,16 @@ func (t *Target) renderApp(p *protogen.Plugin, model *spec.Model) error {
 func leaf(protoPackage string) string {
 	parts := strings.Split(protoPackage, ".")
 	for i := len(parts) - 1; i >= 0; i-- {
-		if p := parts[i]; !(len(p) > 1 && p[0] == 'v' && strings.Trim(p[1:], "0123456789") == "") {
+		if p := parts[i]; !versionSegment(p) {
 			return p
 		}
 	}
 	return parts[len(parts)-1]
+}
+
+// versionSegment reports a proto package's version segment: "v1", "v2".
+func versionSegment(p string) bool {
+	return len(p) > 1 && p[0] == 'v' && strings.Trim(p[1:], "0123456789") == ""
 }
 
 func (t *Target) appModule(name string, services []appService) string {

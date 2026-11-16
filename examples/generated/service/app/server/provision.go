@@ -2,11 +2,11 @@
 // versions:
 // 	protoc-gen-service dev
 // 	protoc (unknown)
-// source: acme/booking/v1/booking.proto, acme/calendar/v1/calendar.proto, acme/directory/v1/directory.proto, acme/idempotency/v1/idempotency.proto, acme/webhook/v1/webhook.proto
+// source: acme/activity/v1/activity.proto, acme/booking/v1/booking.proto, acme/calendar/v1/calendar.proto, acme/directory/v1/directory.proto, acme/idempotency/v1/idempotency.proto, acme/webhook/v1/webhook.proto
 //
 // Application shell of acme: what an application provisions: hooks, logic, overrides and extensions.
-// annotations: entity.v1 v1.6.9, service.v1 dev
-// engine:      protokit v1.3.8
+// annotations: entity.v1 v1.7.1, service.v1 dev
+// engine:      protokit v1.4.0
 //
 // service — https://github.com/the-protobuf-project/service
 
@@ -26,9 +26,11 @@ import (
 	"strings"
 
 	"github.com/the-protobuf-project/runtime-go/grpc"
+	"github.com/the-protobuf-project/service/examples/generated/go/acme/activity/v1"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/booking/v1"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/calendar/v1"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/directory/v1"
+	"github.com/the-protobuf-project/service/examples/generated/service/acme/activity/v1/activityv1svc"
 	"github.com/the-protobuf-project/service/examples/generated/service/acme/booking/v1/bookingv1svc"
 	"github.com/the-protobuf-project/service/examples/generated/service/acme/calendar/v1/calendarv1svc"
 	"github.com/the-protobuf-project/service/examples/generated/service/acme/directory/v1/directoryv1svc"
@@ -62,6 +64,7 @@ type Hooks struct {
 // is required: the assembly refuses to start without it, unless Overrides
 // replaces that service.
 type Logic struct {
+	Activity     activityv1svc.ActivityLogic
 	Holds        bookingv1svc.HoldsLogic
 	Reservations bookingv1svc.ReservationsLogic
 	Calendars    calendarv1svc.CalendarsLogic
@@ -73,6 +76,7 @@ type Logic struct {
 // Services) that redefines a method. A service with no generated server
 // (every method custom and streaming) must be given here.
 type Overrides struct {
+	Activity            activityv1.ActivityServer
 	Holds               bookingv1.HoldsServer
 	Reservations        bookingv1.ReservationsServer
 	Calendars           calendarv1.CalendarsServer
@@ -117,6 +121,9 @@ type Provider func(d *Deps) (Provision, error)
 // check refuses a provision that leaves a method with nothing to answer it.
 func (s *Services) check() error {
 	var missing []string
+	if !s.Activity.HasLogic() && s.overrides.Activity == nil {
+		missing = append(missing, "acme.activity.v1.Activity: custom methods WatchCalendar, ImportEvents, SyncEvents have no implementation; give one in Logic.Activity")
+	}
 	if !s.Holds.HasLogic() && s.overrides.Holds == nil {
 		missing = append(missing, "acme.booking.v1.Holds: custom method ReleaseHold has no implementation; give one in Logic.Holds")
 	}
@@ -139,6 +146,14 @@ func (s *Services) check() error {
 		return nil
 	}
 	return errors.New("server: the provision is incomplete:\n  " + strings.Join(missing, "\n  "))
+}
+
+// registeredActivity is the Activity server registered: the override, or the generated one.
+func (s *Services) registeredActivity() activityv1.ActivityServer {
+	if s.overrides.Activity != nil {
+		return s.overrides.Activity
+	}
+	return s.Activity
 }
 
 // registeredHolds is the Holds server registered: the override, or the generated one.

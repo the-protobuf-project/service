@@ -1,0 +1,100 @@
+// Activity on calendars as streams: every streaming shape a custom method
+// takes -- the server's, the client's and both -- which the generated server
+// delegates to the application's ActivityLogic.
+
+syntax = "proto3";
+
+package acme.activity.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+
+option go_package = "github.com/the-protobuf-project/service/examples/generated/go/acme/activity/v1;activityv1";
+option java_multiple_files = true;
+option java_outer_classname = "ActivityProto";
+option java_package = "com.acme.activity.v1";
+
+// Activity streams what happens on calendars.
+service Activity {
+  option (google.api.default_host) = "activity.acme.example";
+
+  // Streams a calendar's changes as they happen, until the caller hangs up.
+  rpc WatchCalendar(WatchCalendarRequest) returns (stream WatchCalendarResponse) {
+    option (google.api.http) = {
+      post: "/v1/{calendar=calendars/*}:watchCalendar"
+      body: "*"
+    };
+  }
+
+  // Imports events sent one by one, and answers once with how many it took.
+  rpc ImportEvents(stream ImportEventsRequest) returns (ImportEventsResponse) {
+    option (google.api.http) = {
+      post: "/v1/events:import"
+      body: "*"
+    };
+  }
+
+  // Answers each change sent with the calendar's state after it, both ways
+  // at once.
+  // A bidirectional stream has no HTTP binding (AIP-127): gRPC only.
+  rpc SyncEvents(stream SyncEventsRequest) returns (stream SyncEventsResponse);
+}
+
+// The request message for WatchCalendar.
+message WatchCalendarRequest {
+  // The calendar to watch.
+  string calendar = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "calendar.acme.example/Calendar"
+  ];
+}
+
+// One change WatchCalendar streams.
+message WatchCalendarResponse {
+  // The event that changed.
+  string event = 1 [(google.api.resource_reference).type = "calendar.acme.example/Event"];
+
+  // What happened to it: created, updated or deleted.
+  string change = 2;
+}
+
+// One event ImportEvents takes.
+message ImportEventsRequest {
+  // The calendar to import into.
+  string calendar = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "calendar.acme.example/Calendar"
+  ];
+
+  // The event's summary.
+  string summary = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The response message for ImportEvents.
+message ImportEventsResponse {
+  // How many events were imported.
+  int32 imported_count = 1;
+}
+
+// One change SyncEvents takes.
+message SyncEventsRequest {
+  // The calendar the change is to.
+  string calendar = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference).type = "calendar.acme.example/Calendar"
+  ];
+
+  // The change.
+  string change = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The calendar's state after one change SyncEvents took.
+message SyncEventsResponse {
+  // The calendar.
+  string calendar = 1 [(google.api.resource_reference).type = "calendar.acme.example/Calendar"];
+
+  // How many changes the stream has applied so far.
+  int32 applied_count = 2;
+}

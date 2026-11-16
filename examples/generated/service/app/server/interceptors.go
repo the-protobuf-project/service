@@ -2,11 +2,11 @@
 // versions:
 // 	protoc-gen-service dev
 // 	protoc (unknown)
-// source: acme/booking/v1/booking.proto, acme/calendar/v1/calendar.proto, acme/directory/v1/directory.proto, acme/idempotency/v1/idempotency.proto, acme/webhook/v1/webhook.proto
+// source: acme/activity/v1/activity.proto, acme/booking/v1/booking.proto, acme/calendar/v1/calendar.proto, acme/directory/v1/directory.proto, acme/idempotency/v1/idempotency.proto, acme/webhook/v1/webhook.proto
 //
 // Application shell of acme: the interceptor chain every surface runs.
-// annotations: entity.v1 v1.6.9, service.v1 dev
-// engine:      protokit v1.3.8
+// annotations: entity.v1 v1.7.1, service.v1 dev
+// engine:      protokit v1.4.0
 //
 // service — https://github.com/the-protobuf-project/service
 
@@ -38,7 +38,7 @@ func (s *Services) Interceptors() []grpc.UnaryServerInterceptor {
 // idempotency key repository.
 func idempotencyInterceptor(r Repositories) grpc.UnaryServerInterceptor {
 	return idempotency.Interceptor(&idempotencyv1svc.IdempotencyStore{Keys: r.Requestkeys.IdempotencyKeys}, idempotency.Options{
-		Domain: "booking.acme.example",
+		Domain: "activity.acme.example",
 		// A claim that failed for a reason no key explains is the store's
 		// own error, mapped as the repositories map it.
 		CreateError: func(err error) error { return repox.MapGormErr(err) },

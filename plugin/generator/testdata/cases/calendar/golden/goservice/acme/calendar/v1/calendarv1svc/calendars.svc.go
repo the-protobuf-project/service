@@ -137,6 +137,9 @@ func (s *CalendarsServer) Repositories() CalendarsRepositories { return s.repos 
 // methods. The server runs each through Options().Run, traced and with its
 // error rendered by the translator, so an implementation returns plain errors:
 // a *problem.Problem, an error wrapping a registered sentinel, or a status.
+//
+// A streaming method's stream carries the traced context: its Context is
+// the one the method runs in.
 type CalendarsLogic interface {
 	QueryFreeBusy(ctx context.Context, req *calendarv1.QueryFreeBusyRequest) (*calendarv1.QueryFreeBusyResponse, error)
 }
@@ -338,7 +341,9 @@ func (s *CalendarsServer) DeleteCalendar(ctx context.Context, req *calendarv1.De
 		if err := s.hooks.BeforeDeleteCalendar(ctx, name, req.GetForce()); err != nil {
 			return err
 		}
-		err := s.repos.Calendars.Delete(ctx, name)
+		// The etag guards the delete itself (repox.IfMatch): a write landing
+		// after the check above is caught by the repository, not let through.
+		err := s.repos.Calendars.Delete(repox.IfMatch(ctx, req.GetEtag()), name)
 		if err != nil {
 			return servicex.NotFoundAs(err, calendarsCalendarType, name)
 		}
@@ -386,7 +391,8 @@ func (s *CalendarsServer) UndeleteCalendar(ctx context.Context, req *calendarv1.
 			out = existing
 			return nil
 		}
-		out, err = s.repos.Calendars.Undelete(ctx, name)
+		// The etag guards the undelete itself (repox.IfMatch).
+		out, err = s.repos.Calendars.Undelete(repox.IfMatch(ctx, req.GetEtag()), name)
 		if err != nil {
 			return servicex.AlreadyExistsAs(servicex.NotFoundAs(err, calendarsCalendarType, name), calendarsCalendarType, name, "It is not deleted, so there is nothing to restore")
 		}

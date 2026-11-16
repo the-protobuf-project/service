@@ -87,9 +87,20 @@ func (s *{{ .GoName }}Server) Repositories() {{ .GoName }}Repositories { return 
 // methods. The server runs each through Options().Run, traced and with its
 // error rendered by the translator, so an implementation returns plain errors:
 // a *problem.Problem, an error wrapping a registered sentinel, or a status.
+//
+// A streaming method's stream carries the traced context: its Context is
+// the one the method runs in.
 type {{ .GoName }}Logic interface {
 {{- range .Logic }}
+{{- if eq .Stream "server" }}
+	{{ .GoName }}(req *{{ .Req }}, stream grpc.ServerStreamingServer[{{ .Resp }}]) error
+{{- else if eq .Stream "client" }}
+	{{ .GoName }}(stream grpc.ClientStreamingServer[{{ .Req }}, {{ .Resp }}]) error
+{{- else if eq .Stream "bidi" }}
+	{{ .GoName }}(stream grpc.BidiStreamingServer[{{ .Req }}, {{ .Resp }}]) error
+{{- else }}
 	{{ .GoName }}(ctx context.Context, req *{{ .Req }}) (*{{ .Resp }}, error)
+{{- end }}
 {{- end }}
 }
 
@@ -105,6 +116,34 @@ func (s *{{ .GoName }}Server) HasLogic() bool { return s.logic != nil }
 {{- range .Logic }}
 
 // {{ .GoName }} runs the {{ $s.GoName }}Logic's {{ .GoName }}.
+{{- if eq .Stream "server" }}
+func (s *{{ $s.GoName }}Server) {{ .GoName }}(req *{{ .Req }}, stream grpc.ServerStreamingServer[{{ .Resp }}]) error {
+	if s.logic == nil {
+		return s.Unimplemented{{ $s.GoName }}Server.{{ .GoName }}(req, stream)
+	}
+	return s.opts.Run(stream.Context(), {{ quote $s.GoName }}, {{ quote .GoName }}, func(ctx context.Context) error {
+		return s.logic.{{ .GoName }}(req, servicex.ServerStream(ctx, stream))
+	})
+}
+{{- else if eq .Stream "client" }}
+func (s *{{ $s.GoName }}Server) {{ .GoName }}(stream grpc.ClientStreamingServer[{{ .Req }}, {{ .Resp }}]) error {
+	if s.logic == nil {
+		return s.Unimplemented{{ $s.GoName }}Server.{{ .GoName }}(stream)
+	}
+	return s.opts.Run(stream.Context(), {{ quote $s.GoName }}, {{ quote .GoName }}, func(ctx context.Context) error {
+		return s.logic.{{ .GoName }}(servicex.ClientStream(ctx, stream))
+	})
+}
+{{- else if eq .Stream "bidi" }}
+func (s *{{ $s.GoName }}Server) {{ .GoName }}(stream grpc.BidiStreamingServer[{{ .Req }}, {{ .Resp }}]) error {
+	if s.logic == nil {
+		return s.Unimplemented{{ $s.GoName }}Server.{{ .GoName }}(stream)
+	}
+	return s.opts.Run(stream.Context(), {{ quote $s.GoName }}, {{ quote .GoName }}, func(ctx context.Context) error {
+		return s.logic.{{ .GoName }}(servicex.BidiStream(ctx, stream))
+	})
+}
+{{- else }}
 func (s *{{ $s.GoName }}Server) {{ .GoName }}(ctx context.Context, req *{{ .Req }}) (*{{ .Resp }}, error) {
 	if s.logic == nil {
 		return s.Unimplemented{{ $s.GoName }}Server.{{ .GoName }}(ctx, req)
@@ -119,6 +158,7 @@ func (s *{{ $s.GoName }}Server) {{ .GoName }}(ctx context.Context, req *{{ .Req 
 	}
 	return out, nil
 }
+{{- end }}
 {{- end }}
 {{- end }}
 {{ range .Resources }}{{ template "resource" (dict "S" $s "R" .) }}{{ end }}
@@ -420,7 +460,13 @@ func (s *{{ $s.GoName }}Server) {{ $m.GoName }}(ctx context.Context, req *{{ $m.
 			return nil
 		}
 {{- end }}
+{{- if and $m.Etag $r.HasEtag }}
+		// The etag guards the delete itself (repox.IfMatch): a write landing
+		// after the check above is caught by the repository, not let through.
+		err := s.repos.{{ $r.Field }}.Delete(repox.IfMatch(ctx, req.{{ $m.Etag }}), name)
+{{- else }}
 		err := s.repos.{{ $r.Field }}.Delete(ctx, name)
+{{- end }}
 {{- if $m.AllowMissing }}
 		if req.{{ $m.AllowMissing }} && servicex.IsNotFound(err) {
 			return nil
@@ -472,7 +518,12 @@ func (s *{{ $s.GoName }}Server) {{ $m.GoName }}(ctx context.Context, req *{{ $m.
 			return nil
 		}
 {{- end }}
+{{- if and $m.Etag $r.HasEtag }}
+		// The etag guards the undelete itself (repox.IfMatch).
+		out, err = s.repos.{{ $r.Field }}.Undelete(repox.IfMatch(ctx, req.{{ $m.Etag }}), name)
+{{- else }}
 		out, err = s.repos.{{ $r.Field }}.Undelete(ctx, name)
+{{- end }}
 		if err != nil {
 			return servicex.AlreadyExistsAs(servicex.NotFoundAs(err, {{ $r.Var }}Type, name), {{ $r.Var }}Type, name, "It is not deleted, so there is nothing to restore")
 		}

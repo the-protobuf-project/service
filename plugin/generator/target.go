@@ -134,9 +134,7 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 		sources := packageSources(pkg)
 		for _, svc := range pkg.Services {
 			if !svc.Standard() && !hasLogic(svc) {
-				// Nothing to generate: every method is custom and streaming.
-				// The service is still registered (Servers takes any
-				// implementation).
+				// Nothing to generate: the service has no method at all.
 				continue
 			}
 			view, err := serviceFileView(pkg, svc, servicex, s.RepositoryModule)
@@ -282,11 +280,11 @@ var standardReasons = []*spec.ErrorReason{
 // PackageSources returns the sorted source files contributing to a package.
 func PackageSources(pkg *spec.Package) []string { return packageSources(pkg) }
 
-// hasLogic reports whether svc has a unary custom method, which its
-// generated server delegates to a Logic.
+// hasLogic reports whether svc has a custom method, unary or streaming,
+// which its generated server delegates to a Logic.
 func hasLogic(svc *spec.Service) bool {
 	for _, m := range svc.Methods {
-		if m.Kind == spec.Custom && !m.Proto.Desc.IsStreamingClient() && !m.Proto.Desc.IsStreamingServer() {
+		if m.Kind == spec.Custom {
 			return true
 		}
 	}
