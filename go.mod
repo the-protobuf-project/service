@@ -20,7 +20,7 @@ go 1.26.5
 
 require (
 	github.com/the-protobuf-project/protokit v1.3.8
-	github.com/the-protobuf-project/store v1.6.9
+	github.com/the-protobuf-project/store v1.6.10
 	google.golang.org/genproto/googleapis/api v0.0.0-20261026165753-2ffab32bce7e
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
