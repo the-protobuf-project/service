@@ -13,59 +13,103 @@
 use crate::pb::streams::v1 as pb;
 use crate::service::servicex;
 
-/// Custom RPC handlers for Entries. Override the methods your application serves.
-#[tonic::async_trait]
-pub trait EntriesCustom: Send + Sync {
-    async fn wrap(
-        &self,
-        _request: tonic::Request<String>,
-    ) -> Result<tonic::Response<Vec<u8>>, tonic::Status> {
-        Err(tonic::Status::unimplemented("Wrap"))
+/// The handlers of streams.v1.Entries: one per RPC, the request message in and the response
+/// message out -- the database layer, a call to another service, any business logic.
+/// The server runs the generated checks and hooks of a standard method around its handler.
+#[derive(Default, Clone)]
+pub struct EntriesHandlers {
+    /// Wrap.
+    pub wrap: Option<servicex::Handler<String, Vec<u8>>>,
+    /// Watch.
+    pub watch: Option<servicex::Handler<pb::Entry, servicex::ResponseStream<pb::Entry>>>,
+    /// Upload.
+    pub upload: Option<servicex::Handler<tonic::Streaming<pb::Entry>, pb::Entry>>,
+    /// Exchange.
+    pub exchange:
+        Option<servicex::Handler<tonic::Streaming<pb::Entry>, servicex::ResponseStream<pb::Entry>>>,
+}
+
+impl EntriesHandlers {
+    /// Registers the handler of Wrap.
+    pub fn wrap<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, String) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<Vec<u8>, tonic::Status>> + Send + 'static,
+    {
+        self.wrap = Some(servicex::Handler::new(f));
+        self
     }
-    async fn watch(
-        &self,
-        _request: tonic::Request<pb::Entry>,
-    ) -> Result<tonic::Response<servicex::ResponseStream<pb::Entry>>, tonic::Status> {
-        Err(tonic::Status::unimplemented("Watch"))
+    /// Registers the handler of Watch.
+    pub fn watch<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::Entry) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<servicex::ResponseStream<pb::Entry>, tonic::Status>>
+            + Send
+            + 'static,
+    {
+        self.watch = Some(servicex::Handler::new(f));
+        self
     }
-    async fn upload(
-        &self,
-        _request: tonic::Request<tonic::Streaming<pb::Entry>>,
-    ) -> Result<tonic::Response<pb::Entry>, tonic::Status> {
-        Err(tonic::Status::unimplemented("Upload"))
+    /// Registers the handler of Upload.
+    pub fn upload<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, tonic::Streaming<pb::Entry>) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Entry, tonic::Status>> + Send + 'static,
+    {
+        self.upload = Some(servicex::Handler::new(f));
+        self
     }
-    async fn exchange(
-        &self,
-        _request: tonic::Request<tonic::Streaming<pb::Entry>>,
-    ) -> Result<tonic::Response<servicex::ResponseStream<pb::Entry>>, tonic::Status> {
-        Err(tonic::Status::unimplemented("Exchange"))
+    /// Registers the handler of Exchange.
+    pub fn exchange<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, tonic::Streaming<pb::Entry>) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<servicex::ResponseStream<pb::Entry>, tonic::Status>>
+            + Send
+            + 'static,
+    {
+        self.exchange = Some(servicex::Handler::new(f));
+        self
+    }
+    /// The RPCs no handler is registered for.
+    pub fn missing(&self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.wrap.is_none() {
+            out.push("Wrap");
+        }
+        if self.watch.is_none() {
+            out.push("Watch");
+        }
+        if self.upload.is_none() {
+            out.push("Upload");
+        }
+        if self.exchange.is_none() {
+            out.push("Exchange");
+        }
+        out
     }
 }
 
-/// Default custom handlers returning `Unimplemented`.
-pub struct NopEntriesCustom;
-
-impl EntriesCustom for NopEntriesCustom {}
-
-/// Generated server backed by typed repositories and application hooks.
+/// streams.v1.Entries's server: each standard method's generated checks and hooks around its
+/// registered handler, and every custom method straight to its own.
 pub struct EntriesServer {
     pub options: servicex::Options,
-    pub custom: std::sync::Arc<dyn EntriesCustom>,
+    handlers: EntriesHandlers,
 }
 
 impl EntriesServer {
-    /// Creates a server over the supplied resources.
-    pub fn new(options: servicex::Options) -> Self {
-        Self {
-            options,
-            custom: std::sync::Arc::new(NopEntriesCustom),
+    /// Builds the server over handlers, refusing one that leaves an RPC without a handler.
+    pub fn new(
+        options: servicex::Options,
+        handlers: EntriesHandlers,
+    ) -> Result<Self, servicex::MissingHandlers> {
+        let methods = handlers.missing();
+        if !methods.is_empty() {
+            return Err(servicex::MissingHandlers {
+                service: "streams.v1.Entries",
+                methods,
+            });
         }
-    }
-
-    /// Installs the application's custom RPC handlers.
-    pub fn with_custom(mut self, custom: impl EntriesCustom + 'static) -> Self {
-        self.custom = std::sync::Arc::new(custom);
-        self
+        Ok(Self { options, handlers })
     }
     /// Wraps this server for registration with tonic.
     pub fn into_service(self) -> pb::entries_server::EntriesServer<Self> {
@@ -79,7 +123,11 @@ impl pb::entries_server::Entries for EntriesServer {
         &self,
         request: tonic::Request<String>,
     ) -> Result<tonic::Response<Vec<u8>>, tonic::Status> {
-        self.custom.wrap(request).await
+        let ctx = servicex::Context::from_request(&request);
+        let out = servicex::handler(&self.handlers.wrap, "Wrap")?
+            .call(ctx, request.into_inner())
+            .await?;
+        Ok(tonic::Response::new(out))
     }
 
     type WatchStream = servicex::ResponseStream<pb::Entry>;
@@ -87,14 +135,22 @@ impl pb::entries_server::Entries for EntriesServer {
         &self,
         request: tonic::Request<pb::Entry>,
     ) -> Result<tonic::Response<Self::WatchStream>, tonic::Status> {
-        self.custom.watch(request).await
+        let ctx = servicex::Context::from_request(&request);
+        let out = servicex::handler(&self.handlers.watch, "Watch")?
+            .call(ctx, request.into_inner())
+            .await?;
+        Ok(tonic::Response::new(out))
     }
 
     async fn upload(
         &self,
         request: tonic::Request<tonic::Streaming<pb::Entry>>,
     ) -> Result<tonic::Response<pb::Entry>, tonic::Status> {
-        self.custom.upload(request).await
+        let ctx = servicex::Context::from_request(&request);
+        let out = servicex::handler(&self.handlers.upload, "Upload")?
+            .call(ctx, request.into_inner())
+            .await?;
+        Ok(tonic::Response::new(out))
     }
 
     type ExchangeStream = servicex::ResponseStream<pb::Entry>;
@@ -102,6 +158,10 @@ impl pb::entries_server::Entries for EntriesServer {
         &self,
         request: tonic::Request<tonic::Streaming<pb::Entry>>,
     ) -> Result<tonic::Response<Self::ExchangeStream>, tonic::Status> {
-        self.custom.exchange(request).await
+        let ctx = servicex::Context::from_request(&request);
+        let out = servicex::handler(&self.handlers.exchange, "Exchange")?
+            .call(ctx, request.into_inner())
+            .await?;
+        Ok(tonic::Response::new(out))
     }
 }

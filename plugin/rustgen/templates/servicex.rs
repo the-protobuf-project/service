@@ -1,4 +1,7 @@
-//! Shared service behavior. Repository mutations must atomically enforce their etag.
+//! Shared service behavior: the checks and hooks of the generated standard
+//! methods around the handlers an application registers, one per RPC, and the
+//! store adapters (feeds, events, idempotency) over its repositories.
+//! Handlers and repositories that write must enforce the etag in the write.
 use prost::Message;
 use prost_reflect::{DescriptorPool, DynamicMessage, ReflectMessage, Value};
 use std::sync::Arc;
@@ -198,22 +201,69 @@ where
 pub struct NopHooks;
 #[tonic::async_trait]
 impl<M: Send + Sync + 'static> Hooks<M> for NopHooks {}
-pub struct Resource<M: Send + Sync + 'static> {
-    pub repository: Arc<dyn Repository<M>>,
-    pub hooks: Arc<dyn Hooks<M>>,
+/// A boxed future, the shape every handler returns.
+pub type BoxFuture<T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'static>>;
+
+/// A registered hook for one RPC: the request message in, the response
+/// message out. It is where the application's work happens -- a Diesel
+/// query, a call to another service, any business logic. The generated server
+/// runs its checks and hooks around it; a handler never sees a request those
+/// checks refused.
+pub struct Handler<Req, Resp> {
+    f: Arc<HandlerFn<Req, Resp>>,
 }
-impl<M: Send + Sync + 'static> Resource<M> {
-    pub fn new(repository: impl Repository<M> + 'static) -> Self {
+/// The function a Handler holds.
+pub type HandlerFn<Req, Resp> = dyn Fn(Context, Req) -> BoxFuture<Result<Resp, Status>> + Send + Sync;
+impl<Req, Resp> Clone for Handler<Req, Resp> {
+    fn clone(&self) -> Self {
+        Self { f: self.f.clone() }
+    }
+}
+impl<Req: Send + 'static, Resp: Send + 'static> Handler<Req, Resp> {
+    /// A handler from an async function or closure.
+    pub fn new<F, Fut>(f: F) -> Self
+    where
+        F: Fn(Context, Req) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<Resp, Status>> + Send + 'static,
+    {
         Self {
-            repository: Arc::new(repository),
-            hooks: Arc::new(NopHooks),
+            f: Arc::new(move |ctx, req| Box::pin(f(ctx, req))),
         }
     }
-    pub fn with_hooks(mut self, hooks: impl Hooks<M> + 'static) -> Self {
-        self.hooks = Arc::new(hooks);
-        self
+    /// Runs the handler.
+    pub async fn call(&self, ctx: Context, req: Req) -> Result<Resp, Status> {
+        (self.f)(ctx, req).await
     }
 }
+/// The handler of method, or INTERNAL when none was registered: a server is
+/// only built with every handler (see MissingHandlers), so this is never
+/// reached through one.
+pub fn handler<'a, Req, Resp>(
+    h: &'a Option<Handler<Req, Resp>>,
+    method: &str,
+) -> Result<&'a Handler<Req, Resp>, Status> {
+    h.as_ref()
+        .ok_or_else(|| Status::internal(format!("no handler is registered for {method}")))
+}
+/// The RPCs a server was built without a handler for: building it fails, so
+/// no method is ever served UNIMPLEMENTED by omission.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MissingHandlers {
+    pub service: &'static str,
+    pub methods: Vec<&'static str>,
+}
+impl std::fmt::Display for MissingHandlers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} has no handler for {}",
+            self.service,
+            self.methods.join(", ")
+        )
+    }
+}
+impl std::error::Error for MissingHandlers {}
+
 fn typed<M: Message + Default>(m: &DynamicMessage) -> Result<M, Status> {
     m.transcode_to()
         .map_err(|e| Status::internal(e.to_string()))
@@ -418,9 +468,37 @@ fn mapped(o: &Options, e: Status) -> Status {
     };
     o.error(e.code(), why, e.message())
 }
-/// Request-scoped standard-method operations over one resource repository.
+/// What an Update hands its handler: a create, when allow_missing found
+/// nothing, or the record to write and the paths it writes.
+pub enum Update<M> {
+    /// allow_missing on a missing record: the prepared resource to create.
+    Create(M),
+    /// The record to write -- the stored one with the request's paths merged
+    /// in, when the service has a Get to read it with -- carrying the
+    /// request's etag for the handler to guard the write; the canonical
+    /// paths; and the preview a validate_only update returns, which keeps the
+    /// stored etag.
+    Write {
+        value: M,
+        paths: Vec<String>,
+        preview: M,
+    },
+}
+/// What a Delete does next.
+pub enum Delete<M> {
+    /// allow_missing on a missing record: nothing to delete.
+    Skip,
+    /// Call the handler; the stored record, when the service could read it,
+    /// is what a validate_only delete returns.
+    Proceed(Option<M>),
+}
+/// The checks and hooks of one standard method around its handler, over one
+/// resource. Where a check needs the stored record (Update, Delete,
+/// Undelete), the generated server reads it with the service's own Get
+/// handler and passes it in; without a Get it is None, and those checks are
+/// the handler's.
 pub struct Call<'a, M: Send + Sync + 'static> {
-    resource: &'a Resource<M>,
+    hooks: &'a dyn Hooks<M>,
     options: &'a Options,
     spec: &'a ResourceSpec,
     context: &'a Context,
@@ -428,103 +506,66 @@ pub struct Call<'a, M: Send + Sync + 'static> {
 
 impl<'a, M: Message + Default + Send + Sync + 'static> Call<'a, M> {
     pub fn new(
-        resource: &'a Resource<M>,
+        hooks: &'a dyn Hooks<M>,
         options: &'a Options,
         spec: &'a ResourceSpec,
         context: &'a Context,
     ) -> Self {
         Self {
-            resource,
+            hooks,
             options,
             spec,
             context,
         }
     }
-
-    pub async fn get(&self, name: &str) -> Result<M, Status> {
-        let Self {
-            resource: r,
-            options: o,
-            spec: s,
-            context: c,
-        } = self;
-        check_name(o, "name", name, false, s.collections)?;
-        r.repository.get(c, name).await.map_err(|e| mapped(o, e))
+    /// A handler's error with its standard reason attached.
+    pub fn mapped(&self, e: Status) -> Status {
+        mapped(self.options, e)
     }
-    pub async fn list(&self, parent: &str, input: ListInput) -> Result<(Vec<M>, String), Status> {
-        let Self {
-            resource: r,
-            options: o,
-            spec: s,
-            context: c,
-        } = self;
+    /// Get and Purge: the name's shape.
+    pub fn name(&self, name: &str) -> Result<(), Status> {
+        check_name(self.options, "name", name, false, self.spec.collections)
+    }
+    /// List: the parent's shape (AIP-159 wildcards allowed), its ParentCheck
+    /// hook, and the page size.
+    pub async fn list(&self, parent: &str, page_size: i32) -> Result<(), Status> {
+        let (o, s) = (self.options, self.spec);
         if s.collections.len() > 1 {
-            check_name(
-                o,
-                "parent",
-                parent,
-                true,
-                &s.collections[..s.collections.len() - 1],
-            )?;
-            r.hooks.parent_check(c, Op::List, parent).await?;
+            check_name(o, "parent", parent, true, &s.collections[..s.collections.len() - 1])?;
+            self.hooks.parent_check(self.context, Op::List, parent).await?;
         }
-        if input.page_size < 0 {
+        if page_size < 0 {
             return Err(o.bad_field(
                 "INVALID_ARGUMENT",
                 "page_size",
                 "page_size must not be negative",
             ));
         }
-        r.repository
-            .list(c, parent, input)
-            .await
-            .map_err(|e| mapped(o, e))
+        Ok(())
     }
-    pub async fn create(&self, parent: &str, id: &str, value: M, dry: bool) -> Result<M, Status> {
-        let Self {
-            options: o,
-            spec: s,
-            ..
-        } = self;
+    /// Create: the id (AIP-122) and parent, then the resource prepared for
+    /// its handler -- named, its OUTPUT_ONLY fields cleared, its REQUIRED
+    /// ones present -- through ParentCheck, Validate and BeforeCreate.
+    pub async fn create(&self, parent: &str, id: &str, value: M) -> Result<M, Status> {
+        let (o, s) = (self.options, self.spec);
         check_id(o, "resource_id", id)?;
         if s.collections.len() > 1 {
-            check_name(
-                o,
-                "parent",
-                parent,
-                false,
-                &s.collections[..s.collections.len() - 1],
-            )?;
+            check_name(o, "parent", parent, false, &s.collections[..s.collections.len() - 1])?;
         }
         let name = if id.is_empty() {
             String::new()
         } else {
             format!(
                 "{}{}/{}",
-                if parent.is_empty() {
-                    String::new()
-                } else {
-                    format!("{parent}/")
-                },
+                if parent.is_empty() { String::new() } else { format!("{parent}/") },
                 s.collections.last().unwrap(),
                 id
             )
         };
-        self.create_named(parent, &name, value, dry).await
+        self.create_named(parent, &name, value).await
     }
-    async fn create_named(
-        &self,
-        parent: &str,
-        name: &str,
-        value: M,
-        dry: bool,
-    ) -> Result<M, Status> {
-        let Self {
-            resource: r,
-            options: o,
-            spec: s,
-            context: c,
-        } = self;
+    async fn create_named(&self, parent: &str, name: &str, value: M) -> Result<M, Status> {
+        let (o, s, c) = (self.options, self.spec, self.context);
         let mut d = o.dynamic(s, &value)?;
         for f in s.output_only {
             d.clear_field_by_name(f);
@@ -533,47 +574,62 @@ impl<'a, M: Message + Default + Send + Sync + 'static> Call<'a, M> {
         required(o, s, &d)?;
         let mut value = typed(&d)?;
         if s.collections.len() > 1 {
-            r.hooks.parent_check(c, Op::Create, parent).await?;
+            self.hooks.parent_check(c, Op::Create, parent).await?;
         }
-        r.hooks.validate(c, Op::Create, &value, &[]).await?;
-        r.hooks.before_create(c, parent, &mut value).await?;
-        if dry {
-            return Ok(value);
-        }
-        let out = r
-            .repository
-            .create(c, parent, value)
-            .await
-            .map_err(|e| mapped(o, e))?;
-        r.hooks.after_create(c, &out).await?;
-        Ok(out)
+        self.hooks.validate(c, Op::Create, &value, &[]).await?;
+        self.hooks.before_create(c, parent, &mut value).await?;
+        Ok(value)
     }
+    /// AfterCreate, over what the handler wrote.
+    pub async fn after_create(&self, out: &M) -> Result<(), Status> {
+        self.hooks.after_create(self.context, out).await
+    }
+    /// Update: the name and update mask, then, with the stored record, its
+    /// etag, the merge, IMMUTABLE and REQUIRED fields; Validate and
+    /// BeforeUpdate over what is to be written. Without the stored record
+    /// (no Get handler), REQUIRED is checked on the fields the mask writes.
     pub async fn update(
         &self,
         value: M,
         mask: Option<Vec<String>>,
         allow_missing: bool,
-        dry: bool,
-    ) -> Result<M, Status> {
-        let Self {
-            resource: r,
-            options: o,
-            spec: s,
-            context: c,
-        } = self;
+        existing: Option<Result<M, Status>>,
+    ) -> Result<Update<M>, Status> {
+        let (o, s, c) = (self.options, self.spec, self.context);
         let incoming = o.dynamic(s, &value)?;
         let name = text(&incoming, "name");
         check_name(o, "name", &name, false, s.collections)?;
         let paths = paths(o, s, &incoming, mask)?;
-        let existing = match r.repository.get(c, &name).await {
-            Ok(v) => v,
-            Err(e) if e.code() == Code::NotFound && allow_missing => {
+        let existing = match existing {
+            None => {
+                let selected: Vec<&str> = s
+                    .required
+                    .iter()
+                    .copied()
+                    .filter(|f| touches(&paths, f))
+                    .collect();
+                let absent: Vec<_> = selected.iter().filter(|f| !has(&incoming, f)).collect();
+                if let Some(first) = absent.first() {
+                    return Err(o.bad_field("REQUIRED_FIELD", first, "a required field the mask writes is empty"));
+                }
+                let mut value = value;
+                self.hooks.validate(c, Op::Update, &value, &paths).await?;
+                self.hooks.before_update(c, &mut value, &paths).await?;
+                let preview = typed(&o.dynamic(s, &value)?)?;
+                return Ok(Update::Write {
+                    value,
+                    paths,
+                    preview,
+                });
+            }
+            Some(Ok(v)) => v,
+            Some(Err(e)) if e.code() == Code::NotFound && allow_missing => {
                 // AIP-134 allow_missing creates under the id the name
                 // chooses, held to Create's rule.
                 check_id(o, "name", id_of(&name))?;
-                return self.create_named(parent_of(&name), &name, value, dry).await;
+                return Ok(Update::Create(self.create_named(parent_of(&name), &name, value).await?));
             }
-            Err(e) => return Err(mapped(o, e)),
+            Some(Err(e)) => return Err(mapped(o, e)),
         };
         let mut merged = o.dynamic(s, &existing)?;
         check_etag(o, &text(&incoming, "etag"), &text(&merged, "etag"))?;
@@ -586,100 +642,88 @@ impl<'a, M: Message + Default + Send + Sync + 'static> Call<'a, M> {
         }
         required(o, s, &merged)?;
         let mut preview = typed(&merged)?;
-        r.hooks.validate(c, Op::Update, &preview, &paths).await?;
-        r.hooks.before_update(c, &mut preview, &paths).await?;
-        if dry {
-            return Ok(preview);
-        }
-        // Carry the caller's etag; the repository compares it in the write transaction.
+        self.hooks.validate(c, Op::Update, &preview, &paths).await?;
+        self.hooks.before_update(c, &mut preview, &paths).await?;
+        // Carry the caller's etag: the handler guards its write with it.
         let mut write = o.dynamic(s, &preview)?;
         if write.descriptor().get_field_by_name("etag").is_some() {
             write.set_field_by_name("etag", Value::String(text(&incoming, "etag")));
         }
-        let out = r
-            .repository
-            .update(c, typed(&write)?, paths)
-            .await
-            .map_err(|e| mapped(o, e))?;
-        r.hooks.after_update(c, &out).await?;
-        Ok(out)
+        Ok(Update::Write {
+            value: typed(&write)?,
+            paths,
+            preview,
+        })
     }
+    /// AfterUpdate, over what the handler wrote.
+    pub async fn after_update(&self, out: &M) -> Result<(), Status> {
+        self.hooks.after_update(self.context, out).await
+    }
+    /// Delete: the name, then, with the stored record, its etag and whether
+    /// it is already deleted; BeforeDelete.
     pub async fn delete(
         &self,
         name: &str,
         etag: &str,
         allow_missing: bool,
-        dry: bool,
         force: bool,
-    ) -> Result<Option<M>, Status> {
-        let Self {
-            resource: r,
-            options: o,
-            spec: s,
-            context: c,
-        } = self;
+        existing: Option<Result<M, Status>>,
+    ) -> Result<Delete<M>, Status> {
+        let (o, s, c) = (self.options, self.spec, self.context);
         check_name(o, "name", name, false, s.collections)?;
-        let existing = match r.repository.get(c, name).await {
-            Ok(v) => v,
-            Err(e) if e.code() == Code::NotFound && allow_missing => return Ok(None),
-            Err(e) => return Err(mapped(o, e)),
+        let existing = match existing {
+            None => None,
+            Some(Ok(v)) => Some(v),
+            Some(Err(e)) if e.code() == Code::NotFound && allow_missing => return Ok(Delete::Skip),
+            Some(Err(e)) => return Err(mapped(o, e)),
         };
-        let d = o.dynamic(s, &existing)?;
-        check_etag(o, etag, &text(&d, "etag"))?;
-        if s.soft_delete && has(&d, "delete_time") {
-            if allow_missing {
-                return Ok(None);
+        if let Some(v) = &existing {
+            let d = o.dynamic(s, v)?;
+            check_etag(o, etag, &text(&d, "etag"))?;
+            if s.soft_delete && has(&d, "delete_time") {
+                if allow_missing {
+                    return Ok(Delete::Skip);
+                }
+                return Err(o.error(Code::NotFound, "NOT_FOUND", "resource is already deleted"));
             }
-            return Err(o.error(Code::NotFound, "NOT_FOUND", "resource is already deleted"));
         }
-        r.hooks.before_delete(c, name, force).await?;
-        if dry {
-            return Ok(Some(existing));
-        }
-        let out = match r.repository.delete(c, name, etag).await {
-            Ok(v) => v,
-            Err(e) if e.code() == Code::NotFound && allow_missing => return Ok(None),
-            Err(e) => return Err(mapped(o, e)),
-        };
-        r.hooks.after_delete(c, name).await?;
-        Ok(out)
+        self.hooks.before_delete(c, name, force).await?;
+        Ok(Delete::Proceed(existing))
     }
-    pub async fn undelete(&self, name: &str, etag: &str, dry: bool) -> Result<M, Status> {
-        let Self {
-            resource: r,
-            options: o,
-            spec: s,
-            context: c,
-        } = self;
-        let existing = self.get(name).await?;
-        let mut d = o.dynamic(s, &existing)?;
-        check_etag(o, etag, &text(&d, "etag"))?;
-        if !has(&d, "delete_time") {
-            return Err(o.error(
-                Code::AlreadyExists,
-                "ALREADY_EXISTS",
-                "resource is not deleted",
-            ));
-        }
-        r.hooks.before_undelete(c, name).await?;
-        if dry {
-            d.clear_field_by_name("delete_time");
-            return typed(&d);
-        }
-        r.repository
-            .undelete(c, name, etag)
-            .await
-            .map_err(|e| mapped(o, e))
+    /// AfterDelete.
+    pub async fn after_delete(&self, name: &str) -> Result<(), Status> {
+        self.hooks.after_delete(self.context, name).await
     }
-    pub async fn purge(&self, name: &str) -> Result<(), Status> {
-        let Self {
-            resource: r,
-            options: o,
-            spec: s,
-            context: c,
-        } = self;
+    /// Undelete: the name, then, with the stored record, its etag and that it
+    /// is deleted; BeforeUndelete. Returns the restored record a
+    /// validate_only undelete previews, when the service could read it.
+    pub async fn undelete(
+        &self,
+        name: &str,
+        etag: &str,
+        existing: Option<Result<M, Status>>,
+    ) -> Result<Option<M>, Status> {
+        let (o, s, c) = (self.options, self.spec, self.context);
         check_name(o, "name", name, false, s.collections)?;
-        r.repository.purge(c, name).await.map_err(|e| mapped(o, e))
+        let preview = match existing {
+            None => None,
+            Some(Err(e)) => return Err(mapped(o, e)),
+            Some(Ok(v)) => {
+                let mut d = o.dynamic(s, &v)?;
+                check_etag(o, etag, &text(&d, "etag"))?;
+                if !has(&d, "delete_time") {
+                    return Err(o.error(
+                        Code::AlreadyExists,
+                        "ALREADY_EXISTS",
+                        "resource is not deleted",
+                    ));
+                }
+                d.clear_field_by_name("delete_time");
+                Some(typed(&d)?)
+            }
+        };
+        self.hooks.before_undelete(c, name).await?;
+        Ok(preview)
     }
 }
 

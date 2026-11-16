@@ -235,19 +235,65 @@ when needed. Shared behavior lives in `servicex/mod.rs`, `servicex/feeds.rs`, an
 When upgrading from the flat layout, remove the old generated `servicex.rs`
 and `<proto.package>.svc.rs` files before regenerating. The fixture update
 command performs this cleanup for `examples/rust`.
-It includes standard CRUD and undelete/purge methods, async
-repository and hook traits, custom method traits (including streaming), typed
-error constructors, change feeds, and event/idempotency record adapters.
-Construct a generated server with `servicex::Options` and a
-`servicex::Resource` for each resource, then register `server.into_service()`
-with tonic. `Options` takes a `prost_reflect::DescriptorPool` containing your
-schema and its imports; it supplies field behavior and mask metadata.
+Every RPC is answered by a **handler** the application registers: the
+request message in, the response message out -- a Diesel query, a call to
+another service, any business logic. The plugin never generates the database
+layer; it runs each standard method's checks and hooks around its handler:
 
-Implement the generated `Repository<M>` trait for your persistence layer.
-Mutations must enforce etags atomically; repositories also implement filtering,
-ordering, paging, timestamps and soft deletion. Adapter settlement may update
-output-only fields through `update_with_output_only`. Hooks receive request
-metadata and extensions through `Context`; custom RPCs receive tonic requests.
+| Method | Generated around the handler |
+|---|---|
+| Get, Purge | the name's shape |
+| List | the parent's shape (AIP-159 `-` allowed), `ParentCheck`, `page_size` |
+| Create | the id (AIP-122) and parent; the resource named, OUTPUT_ONLY cleared, REQUIRED checked; `ParentCheck`, `Validate`, `BeforeCreate`; `validate_only`; `AfterCreate` |
+| Update | the name and `update_mask`; with the stored record (read through the service's own Get handler) its etag, the merge, IMMUTABLE and REQUIRED fields; `allow_missing`; `Validate`, `BeforeUpdate`; `validate_only`; `AfterUpdate`. The handler receives the record to write and the canonical mask, carrying the request's etag |
+| Delete, Undelete | the name; with the stored record its etag and deleted state; `allow_missing`, `force`, `validate_only`; the before/after hooks |
+| Custom (unary or streaming) | nothing: straight to its handler |
+
+```rust
+let handlers = ds::OrganizationsHandlers::default()
+    .get_organization(|ctx, req: pb::GetOrganizationRequest| async move { db.get(&req.name).await })
+    .create_organization(|ctx, req: pb::CreateOrganizationRequest| async move { db.insert(req).await })
+    // ... one per RPC
+    ;
+let server = ds::OrganizationsServer::new(options, handlers)?   // MissingHandlers names any RPC left out
+    .with_organization_hooks(MyHooks);                          // servicex::Hooks, optional
+tonic::transport::Server::builder().add_service(server.into_service());
+```
+
+A server is never built with an RPC nothing answers: `new` returns
+`servicex::MissingHandlers` listing them. Handlers that write enforce the etag
+in the write. Handlers and hooks receive request metadata and extensions
+through `servicex::Context`. `Options` takes a `prost_reflect::DescriptorPool`
+containing your schema and its imports; it supplies field behavior and mask
+metadata.
+
+Change feeds and the event and idempotency record adapters read through the
+`servicex::Repository<M>` trait, implemented over the same persistence layer.
+
+`app=<name>` also generates the Rust application shell under `app/`, over
+runtime-rs (`tpp-config`, `tpp-grpc`):
+
+| Item | What |
+|---|---|
+| `app::config` | `AppConfig` (identity; the server's listeners, MCP, TLS, CORS and shutdown) with its `Validate` check; `loader()` over the embedded `<name>.release.toml` and `<name>.dev.toml`, then files and `<NAME>_SECTION__KEY` variables, which override everything; `load()` |
+| `app::Handlers`, `app::Hooks` | Every service's handlers and every resource's hooks, in one place |
+| `app::assemble` | Every server built from them, or `MissingHandlers` for every service with an RPC left unanswered |
+| `app::hybrid_server` | Every service on runtime-rs's hybrid gRPC/REST/MCP server, with reflection and buf.validate over the descriptors, and CORS, TLS, MCP and the shutdown timeout from the configuration |
+| `app::run` | Load, assemble, serve until SIGINT or SIGTERM, stop gracefully |
+
+```rust
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut handlers = app::Handlers::default();
+    handlers.organizations = handlers.organizations.get_organization(|ctx, req| async move { db.get(&req.name).await });
+    // ... one per RPC
+    app::run(app::Provision::new(DESCRIPTORS, handlers)).await?;
+    Ok(())
+}
+```
+
+The crate depends on `tpp-config` and `tpp-grpc` (with its `tls` feature), and
+`serde` with `derive`.
 
 The Rust target uses tonic 0.14, prost/prost-types 0.14, tonic-types 0.14,
 prost-reflect 0.16 with `serde`, futures-core 0.3, and serde_json 1. See the

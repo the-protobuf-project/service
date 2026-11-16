@@ -13,42 +13,166 @@
 use crate::pb::acme::calendar::v1 as pb;
 use crate::service::servicex;
 
-/// Custom RPC handlers for Calendars. Override the methods your application serves.
-#[tonic::async_trait]
-pub trait CalendarsCustom: Send + Sync {
-    async fn query_free_busy(
-        &self,
-        _request: tonic::Request<pb::QueryFreeBusyRequest>,
-    ) -> Result<tonic::Response<pb::QueryFreeBusyResponse>, tonic::Status> {
-        Err(tonic::Status::unimplemented("QueryFreeBusy"))
+/// The handlers of acme.calendar.v1.Calendars: one per RPC, the request message in and the response
+/// message out -- the database layer, a call to another service, any business logic.
+/// The server runs the generated checks and hooks of a standard method around its handler.
+#[derive(Default, Clone)]
+pub struct CalendarsHandlers {
+    /// GetCalendar.
+    pub get_calendar: Option<servicex::Handler<pb::GetCalendarRequest, pb::Calendar>>,
+    /// ListCalendars.
+    pub list_calendars:
+        Option<servicex::Handler<pb::ListCalendarsRequest, pb::ListCalendarsResponse>>,
+    /// CreateCalendar.
+    pub create_calendar: Option<servicex::Handler<pb::CreateCalendarRequest, pb::Calendar>>,
+    /// UpdateCalendar.
+    pub update_calendar: Option<servicex::Handler<pb::UpdateCalendarRequest, pb::Calendar>>,
+    /// DeleteCalendar.
+    pub delete_calendar: Option<servicex::Handler<pb::DeleteCalendarRequest, pb::Calendar>>,
+    /// UndeleteCalendar.
+    pub undelete_calendar: Option<servicex::Handler<pb::UndeleteCalendarRequest, pb::Calendar>>,
+    /// QueryFreeBusy.
+    pub query_free_busy:
+        Option<servicex::Handler<pb::QueryFreeBusyRequest, pb::QueryFreeBusyResponse>>,
+}
+
+impl CalendarsHandlers {
+    /// Registers the handler of GetCalendar.
+    pub fn get_calendar<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::GetCalendarRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Calendar, tonic::Status>> + Send + 'static,
+    {
+        self.get_calendar = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of ListCalendars.
+    pub fn list_calendars<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::ListCalendarsRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::ListCalendarsResponse, tonic::Status>>
+            + Send
+            + 'static,
+    {
+        self.list_calendars = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of CreateCalendar.
+    pub fn create_calendar<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::CreateCalendarRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Calendar, tonic::Status>> + Send + 'static,
+    {
+        self.create_calendar = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of UpdateCalendar.
+    pub fn update_calendar<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::UpdateCalendarRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Calendar, tonic::Status>> + Send + 'static,
+    {
+        self.update_calendar = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of DeleteCalendar.
+    pub fn delete_calendar<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::DeleteCalendarRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Calendar, tonic::Status>> + Send + 'static,
+    {
+        self.delete_calendar = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of UndeleteCalendar.
+    pub fn undelete_calendar<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::UndeleteCalendarRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::Calendar, tonic::Status>> + Send + 'static,
+    {
+        self.undelete_calendar = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of QueryFreeBusy.
+    pub fn query_free_busy<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::QueryFreeBusyRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::QueryFreeBusyResponse, tonic::Status>>
+            + Send
+            + 'static,
+    {
+        self.query_free_busy = Some(servicex::Handler::new(f));
+        self
+    }
+    /// The RPCs no handler is registered for.
+    pub fn missing(&self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.get_calendar.is_none() {
+            out.push("GetCalendar");
+        }
+        if self.list_calendars.is_none() {
+            out.push("ListCalendars");
+        }
+        if self.create_calendar.is_none() {
+            out.push("CreateCalendar");
+        }
+        if self.update_calendar.is_none() {
+            out.push("UpdateCalendar");
+        }
+        if self.delete_calendar.is_none() {
+            out.push("DeleteCalendar");
+        }
+        if self.undelete_calendar.is_none() {
+            out.push("UndeleteCalendar");
+        }
+        if self.query_free_busy.is_none() {
+            out.push("QueryFreeBusy");
+        }
+        out
     }
 }
 
-/// Default custom handlers returning `Unimplemented`.
-pub struct NopCalendarsCustom;
-
-impl CalendarsCustom for NopCalendarsCustom {}
-
-/// Generated server backed by typed repositories and application hooks.
+/// acme.calendar.v1.Calendars's server: each standard method's generated checks and hooks around its
+/// registered handler, and every custom method straight to its own.
 pub struct CalendarsServer {
     pub options: servicex::Options,
-    pub custom: std::sync::Arc<dyn CalendarsCustom>,
-    pub calendar: servicex::Resource<pb::Calendar>,
+    handlers: CalendarsHandlers,
+    calendar_hooks: std::sync::Arc<dyn servicex::Hooks<pb::Calendar>>,
 }
 
 impl CalendarsServer {
-    /// Creates a server over the supplied resources.
-    pub fn new(options: servicex::Options, calendar: servicex::Resource<pb::Calendar>) -> Self {
-        Self {
-            options,
-            calendar,
-            custom: std::sync::Arc::new(NopCalendarsCustom),
+    /// Builds the server over handlers, refusing one that leaves an RPC without a handler.
+    pub fn new(
+        options: servicex::Options,
+        handlers: CalendarsHandlers,
+    ) -> Result<Self, servicex::MissingHandlers> {
+        let methods = handlers.missing();
+        if !methods.is_empty() {
+            return Err(servicex::MissingHandlers {
+                service: "acme.calendar.v1.Calendars",
+                methods,
+            });
         }
+        Ok(Self {
+            options,
+            handlers,
+            calendar_hooks: std::sync::Arc::new(servicex::NopHooks),
+        })
     }
-
-    /// Installs the application's custom RPC handlers.
-    pub fn with_custom(mut self, custom: impl CalendarsCustom + 'static) -> Self {
-        self.custom = std::sync::Arc::new(custom);
+    /// Sets the hooks around Calendar's standard methods.
+    pub fn with_calendar_hooks(
+        mut self,
+        hooks: impl servicex::Hooks<pb::Calendar> + 'static,
+    ) -> Self {
+        self.calendar_hooks = std::sync::Arc::new(hooks);
+        self
+    }
+    /// Sets hooks shared with other owners around Calendar's standard methods.
+    pub fn with_calendar_hooks_shared(
+        mut self,
+        hooks: std::sync::Arc<dyn servicex::Hooks<pb::Calendar>>,
+    ) -> Self {
+        self.calendar_hooks = hooks;
         self
     }
     /// Wraps this server for registration with tonic.
@@ -65,7 +189,6 @@ impl pb::calendars_server::Calendars for CalendarsServer {
     ) -> Result<tonic::Response<pb::Calendar>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.calendar;
         let spec = servicex::ResourceSpec {
             message: "acme.calendar.v1.Calendar",
             resource_type: "calendar.acme.example/Calendar",
@@ -82,8 +205,13 @@ impl pb::calendars_server::Calendars for CalendarsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("calendar.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let out = call.get(&req.name).await?;
+        let call = servicex::Call::new(self.calendar_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.get_calendar, "GetCalendar")?;
+        call.name(&req.name)?;
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -93,7 +221,6 @@ impl pb::calendars_server::Calendars for CalendarsServer {
     ) -> Result<tonic::Response<pb::ListCalendarsResponse>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.calendar;
         let spec = servicex::ResourceSpec {
             message: "acme.calendar.v1.Calendar",
             resource_type: "calendar.acme.example/Calendar",
@@ -110,24 +237,13 @@ impl pb::calendars_server::Calendars for CalendarsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("calendar.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let (items, next) = call
-            .list(
-                "",
-                servicex::ListInput {
-                    page_size: req.page_size,
-                    page_token: req.page_token,
-                    filter: req.filter,
-                    order_by: req.order_by,
-                    show_deleted: req.show_deleted,
-                    read_mask: req.read_mask.map(|m| m.paths).unwrap_or_default(),
-                },
-            )
-            .await?;
-        let out = pb::ListCalendarsResponse {
-            calendars: items,
-            next_page_token: next,
-        };
+        let call = servicex::Call::new(self.calendar_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.list_calendars, "ListCalendars")?;
+        call.list("", req.page_size).await?;
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -136,8 +252,7 @@ impl pb::calendars_server::Calendars for CalendarsServer {
         request: tonic::Request<pb::CreateCalendarRequest>,
     ) -> Result<tonic::Response<pb::Calendar>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
-        let req = request.into_inner();
-        let resource = &self.calendar;
+        let mut req = request.into_inner();
         let spec = servicex::ResourceSpec {
             message: "acme.calendar.v1.Calendar",
             resource_type: "calendar.acme.example/Calendar",
@@ -154,11 +269,21 @@ impl pb::calendars_server::Calendars for CalendarsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("calendar.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let body = req.calendar.ok_or_else(|| {
+        let call = servicex::Call::new(self.calendar_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.create_calendar, "CreateCalendar")?;
+        let body = req.calendar.take().ok_or_else(|| {
             options.bad_field("REQUIRED_FIELD", "calendar", "resource is required")
         })?;
-        let out = call.create("", &req.calendar_id, body, false).await?;
+        let body = call.create("", &req.calendar_id, body).await?;
+        if false {
+            return Ok(tonic::Response::new(body));
+        }
+        req.calendar = Some(body);
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
+        call.after_create(&out).await?;
         Ok(tonic::Response::new(out))
     }
 
@@ -167,8 +292,7 @@ impl pb::calendars_server::Calendars for CalendarsServer {
         request: tonic::Request<pb::UpdateCalendarRequest>,
     ) -> Result<tonic::Response<pb::Calendar>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
-        let req = request.into_inner();
-        let resource = &self.calendar;
+        let mut req = request.into_inner();
         let spec = servicex::ResourceSpec {
             message: "acme.calendar.v1.Calendar",
             resource_type: "calendar.acme.example/Calendar",
@@ -185,13 +309,63 @@ impl pb::calendars_server::Calendars for CalendarsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("calendar.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let body = req.calendar.ok_or_else(|| {
+        let call = servicex::Call::new(self.calendar_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.update_calendar, "UpdateCalendar")?;
+        let body = req.calendar.clone().ok_or_else(|| {
             options.bad_field("REQUIRED_FIELD", "calendar", "resource is required")
         })?;
-        let out = call
-            .update(body, req.update_mask.map(|m| m.paths), false, false)
-            .await?;
+        let existing = match &self.handlers.get_calendar {
+            Some(get) => Some(
+                get.call(
+                    ctx.clone(),
+                    pb::GetCalendarRequest {
+                        name: body.name.clone(),
+                    },
+                )
+                .await,
+            ),
+            None => None,
+        };
+        let dry = false;
+        let out = match call
+            .update(
+                body,
+                req.update_mask.clone().map(|m| m.paths),
+                false,
+                existing,
+            )
+            .await?
+        {
+            servicex::Update::Create(value) => {
+                if dry {
+                    return Ok(tonic::Response::new(value));
+                }
+                req.calendar = Some(value);
+                let out = handler
+                    .call(ctx.clone(), req)
+                    .await
+                    .map_err(|e| call.mapped(e))?;
+                call.after_create(&out).await?;
+                out
+            }
+            servicex::Update::Write {
+                value,
+                paths,
+                preview,
+            } => {
+                if dry {
+                    return Ok(tonic::Response::new(preview));
+                }
+                req.calendar = Some(value);
+                req.update_mask = Some(prost_types::FieldMask { paths });
+                let out = handler
+                    .call(ctx.clone(), req)
+                    .await
+                    .map_err(|e| call.mapped(e))?;
+                call.after_update(&out).await?;
+                out
+            }
+        };
         Ok(tonic::Response::new(out))
     }
 
@@ -201,7 +375,6 @@ impl pb::calendars_server::Calendars for CalendarsServer {
     ) -> Result<tonic::Response<pb::Calendar>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.calendar;
         let spec = servicex::ResourceSpec {
             message: "acme.calendar.v1.Calendar",
             resource_type: "calendar.acme.example/Calendar",
@@ -218,11 +391,43 @@ impl pb::calendars_server::Calendars for CalendarsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("calendar.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let deleted = call
-            .delete(&req.name, &req.etag, false, false, req.force)
-            .await?;
-        let out = deleted.unwrap_or_default();
+        let call = servicex::Call::new(self.calendar_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.delete_calendar, "DeleteCalendar")?;
+        let name = req.name.clone();
+        let existing = match &self.handlers.get_calendar {
+            Some(get) => Some(
+                get.call(ctx.clone(), pb::GetCalendarRequest { name: name.clone() })
+                    .await,
+            ),
+            None => None,
+        };
+        let allow_missing = false;
+        match call
+            .delete(&name, &req.etag, allow_missing, req.force, existing)
+            .await?
+        {
+            servicex::Delete::Skip => {
+                return Ok(tonic::Response::new(pb::Calendar {
+                    name: name.clone(),
+                    ..Default::default()
+                }));
+            }
+            servicex::Delete::Proceed(existing) => {
+                if false {
+                    return Ok(tonic::Response::new(existing.unwrap_or_default()));
+                }
+            }
+        }
+        let out = match handler.call(ctx.clone(), req).await {
+            Err(e) if allow_missing && e.code() == tonic::Code::NotFound => {
+                return Ok(tonic::Response::new(pb::Calendar {
+                    name: name.clone(),
+                    ..Default::default()
+                }));
+            }
+            result => result.map_err(|e| call.mapped(e))?,
+        };
+        call.after_delete(&name).await?;
         Ok(tonic::Response::new(out))
     }
 
@@ -232,7 +437,6 @@ impl pb::calendars_server::Calendars for CalendarsServer {
     ) -> Result<tonic::Response<pb::Calendar>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.calendar;
         let spec = servicex::ResourceSpec {
             message: "acme.calendar.v1.Calendar",
             resource_type: "calendar.acme.example/Calendar",
@@ -249,10 +453,24 @@ impl pb::calendars_server::Calendars for CalendarsServer {
             soft_delete: true,
         };
         let options = self.options.with_domain("calendar.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let out = call
-            .undelete(&req.name, &req.etag, req.validate_only)
-            .await?;
+        let call = servicex::Call::new(self.calendar_hooks.as_ref(), &options, &spec, &ctx);
+        let handler = servicex::handler(&self.handlers.undelete_calendar, "UndeleteCalendar")?;
+        let name = req.name.clone();
+        let existing = match &self.handlers.get_calendar {
+            Some(get) => Some(
+                get.call(ctx.clone(), pb::GetCalendarRequest { name: name.clone() })
+                    .await,
+            ),
+            None => None,
+        };
+        let preview = call.undelete(&name, &req.etag, existing).await?;
+        if req.validate_only {
+            return Ok(tonic::Response::new(preview.unwrap_or_default()));
+        }
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -260,6 +478,10 @@ impl pb::calendars_server::Calendars for CalendarsServer {
         &self,
         request: tonic::Request<pb::QueryFreeBusyRequest>,
     ) -> Result<tonic::Response<pb::QueryFreeBusyResponse>, tonic::Status> {
-        self.custom.query_free_busy(request).await
+        let ctx = servicex::Context::from_request(&request);
+        let out = servicex::handler(&self.handlers.query_free_busy, "QueryFreeBusy")?
+            .call(ctx, request.into_inner())
+            .await?;
+        Ok(tonic::Response::new(out))
     }
 }

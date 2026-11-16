@@ -13,24 +13,177 @@
 use crate::pb::acme::directory::v1 as pb;
 use crate::service::servicex;
 
-/// Generated server backed by typed repositories and application hooks.
+/// The handlers of acme.directory.v1.OrganizationalUnits: one per RPC, the request message in and the response
+/// message out -- the database layer, a call to another service, any business logic.
+/// The server runs the generated checks and hooks of a standard method around its handler.
+#[derive(Default, Clone)]
+pub struct OrganizationalUnitsHandlers {
+    /// GetOrganizationalUnit.
+    pub get_organizational_unit:
+        Option<servicex::Handler<pb::GetOrganizationalUnitRequest, pb::OrganizationalUnit>>,
+    /// ListOrganizationalUnits.
+    pub list_organizational_units: Option<
+        servicex::Handler<pb::ListOrganizationalUnitsRequest, pb::ListOrganizationalUnitsResponse>,
+    >,
+    /// CreateOrganizationalUnit.
+    pub create_organizational_unit:
+        Option<servicex::Handler<pb::CreateOrganizationalUnitRequest, pb::OrganizationalUnit>>,
+    /// UpdateOrganizationalUnit.
+    pub update_organizational_unit:
+        Option<servicex::Handler<pb::UpdateOrganizationalUnitRequest, pb::OrganizationalUnit>>,
+    /// DeleteOrganizationalUnit.
+    pub delete_organizational_unit:
+        Option<servicex::Handler<pb::DeleteOrganizationalUnitRequest, ()>>,
+    /// UndeleteOrganizationalUnit.
+    pub undelete_organizational_unit:
+        Option<servicex::Handler<pb::UndeleteOrganizationalUnitRequest, pb::OrganizationalUnit>>,
+}
+
+impl OrganizationalUnitsHandlers {
+    /// Registers the handler of GetOrganizationalUnit.
+    pub fn get_organizational_unit<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::GetOrganizationalUnitRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::OrganizationalUnit, tonic::Status>>
+            + Send
+            + 'static,
+    {
+        self.get_organizational_unit = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of ListOrganizationalUnits.
+    pub fn list_organizational_units<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::ListOrganizationalUnitsRequest) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<pb::ListOrganizationalUnitsResponse, tonic::Status>>
+            + Send
+            + 'static,
+    {
+        self.list_organizational_units = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of CreateOrganizationalUnit.
+    pub fn create_organizational_unit<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::CreateOrganizationalUnitRequest) -> Fut
+            + Send
+            + Sync
+            + 'static,
+        Fut: std::future::Future<Output = Result<pb::OrganizationalUnit, tonic::Status>>
+            + Send
+            + 'static,
+    {
+        self.create_organizational_unit = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of UpdateOrganizationalUnit.
+    pub fn update_organizational_unit<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::UpdateOrganizationalUnitRequest) -> Fut
+            + Send
+            + Sync
+            + 'static,
+        Fut: std::future::Future<Output = Result<pb::OrganizationalUnit, tonic::Status>>
+            + Send
+            + 'static,
+    {
+        self.update_organizational_unit = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of DeleteOrganizationalUnit.
+    pub fn delete_organizational_unit<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::DeleteOrganizationalUnitRequest) -> Fut
+            + Send
+            + Sync
+            + 'static,
+        Fut: std::future::Future<Output = Result<(), tonic::Status>> + Send + 'static,
+    {
+        self.delete_organizational_unit = Some(servicex::Handler::new(f));
+        self
+    }
+    /// Registers the handler of UndeleteOrganizationalUnit.
+    pub fn undelete_organizational_unit<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(servicex::Context, pb::UndeleteOrganizationalUnitRequest) -> Fut
+            + Send
+            + Sync
+            + 'static,
+        Fut: std::future::Future<Output = Result<pb::OrganizationalUnit, tonic::Status>>
+            + Send
+            + 'static,
+    {
+        self.undelete_organizational_unit = Some(servicex::Handler::new(f));
+        self
+    }
+    /// The RPCs no handler is registered for.
+    pub fn missing(&self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.get_organizational_unit.is_none() {
+            out.push("GetOrganizationalUnit");
+        }
+        if self.list_organizational_units.is_none() {
+            out.push("ListOrganizationalUnits");
+        }
+        if self.create_organizational_unit.is_none() {
+            out.push("CreateOrganizationalUnit");
+        }
+        if self.update_organizational_unit.is_none() {
+            out.push("UpdateOrganizationalUnit");
+        }
+        if self.delete_organizational_unit.is_none() {
+            out.push("DeleteOrganizationalUnit");
+        }
+        if self.undelete_organizational_unit.is_none() {
+            out.push("UndeleteOrganizationalUnit");
+        }
+        out
+    }
+}
+
+/// acme.directory.v1.OrganizationalUnits's server: each standard method's generated checks and hooks around its
+/// registered handler, and every custom method straight to its own.
 pub struct OrganizationalUnitsServer {
     pub options: servicex::Options,
-    pub organizational_unit: servicex::Resource<pb::OrganizationalUnit>,
+    handlers: OrganizationalUnitsHandlers,
+    organizational_unit_hooks: std::sync::Arc<dyn servicex::Hooks<pb::OrganizationalUnit>>,
 }
 
 impl OrganizationalUnitsServer {
-    /// Creates a server over the supplied resources.
+    /// Builds the server over handlers, refusing one that leaves an RPC without a handler.
     pub fn new(
         options: servicex::Options,
-        organizational_unit: servicex::Resource<pb::OrganizationalUnit>,
-    ) -> Self {
-        Self {
-            options,
-            organizational_unit,
+        handlers: OrganizationalUnitsHandlers,
+    ) -> Result<Self, servicex::MissingHandlers> {
+        let methods = handlers.missing();
+        if !methods.is_empty() {
+            return Err(servicex::MissingHandlers {
+                service: "acme.directory.v1.OrganizationalUnits",
+                methods,
+            });
         }
+        Ok(Self {
+            options,
+            handlers,
+            organizational_unit_hooks: std::sync::Arc::new(servicex::NopHooks),
+        })
     }
-
+    /// Sets the hooks around OrganizationalUnit's standard methods.
+    pub fn with_organizational_unit_hooks(
+        mut self,
+        hooks: impl servicex::Hooks<pb::OrganizationalUnit> + 'static,
+    ) -> Self {
+        self.organizational_unit_hooks = std::sync::Arc::new(hooks);
+        self
+    }
+    /// Sets hooks shared with other owners around OrganizationalUnit's standard methods.
+    pub fn with_organizational_unit_hooks_shared(
+        mut self,
+        hooks: std::sync::Arc<dyn servicex::Hooks<pb::OrganizationalUnit>>,
+    ) -> Self {
+        self.organizational_unit_hooks = hooks;
+        self
+    }
     /// Wraps this server for registration with tonic.
     pub fn into_service(self) -> pb::organizational_units_server::OrganizationalUnitsServer<Self> {
         pb::organizational_units_server::OrganizationalUnitsServer::new(self)
@@ -45,7 +198,6 @@ impl pb::organizational_units_server::OrganizationalUnits for OrganizationalUnit
     ) -> Result<tonic::Response<pb::OrganizationalUnit>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.organizational_unit;
         let spec = servicex::ResourceSpec {
             message: "acme.directory.v1.OrganizationalUnit",
             resource_type: "directory.acme.example/OrganizationalUnit",
@@ -62,8 +214,21 @@ impl pb::organizational_units_server::OrganizationalUnits for OrganizationalUnit
             soft_delete: true,
         };
         let options = self.options.with_domain("directory.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let out = call.get(&req.name).await?;
+        let call = servicex::Call::new(
+            self.organizational_unit_hooks.as_ref(),
+            &options,
+            &spec,
+            &ctx,
+        );
+        let handler = servicex::handler(
+            &self.handlers.get_organizational_unit,
+            "GetOrganizationalUnit",
+        )?;
+        call.name(&req.name)?;
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -73,7 +238,6 @@ impl pb::organizational_units_server::OrganizationalUnits for OrganizationalUnit
     ) -> Result<tonic::Response<pb::ListOrganizationalUnitsResponse>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.organizational_unit;
         let spec = servicex::ResourceSpec {
             message: "acme.directory.v1.OrganizationalUnit",
             resource_type: "directory.acme.example/OrganizationalUnit",
@@ -90,24 +254,21 @@ impl pb::organizational_units_server::OrganizationalUnits for OrganizationalUnit
             soft_delete: true,
         };
         let options = self.options.with_domain("directory.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let (items, next) = call
-            .list(
-                "",
-                servicex::ListInput {
-                    page_size: req.page_size,
-                    page_token: req.page_token,
-                    filter: req.filter,
-                    order_by: String::new(),
-                    show_deleted: req.show_deleted,
-                    read_mask: Vec::new(),
-                },
-            )
-            .await?;
-        let out = pb::ListOrganizationalUnitsResponse {
-            organizational_units: items,
-            next_page_token: next,
-        };
+        let call = servicex::Call::new(
+            self.organizational_unit_hooks.as_ref(),
+            &options,
+            &spec,
+            &ctx,
+        );
+        let handler = servicex::handler(
+            &self.handlers.list_organizational_units,
+            "ListOrganizationalUnits",
+        )?;
+        call.list("", req.page_size).await?;
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 
@@ -116,8 +277,7 @@ impl pb::organizational_units_server::OrganizationalUnits for OrganizationalUnit
         request: tonic::Request<pb::CreateOrganizationalUnitRequest>,
     ) -> Result<tonic::Response<pb::OrganizationalUnit>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
-        let req = request.into_inner();
-        let resource = &self.organizational_unit;
+        let mut req = request.into_inner();
         let spec = servicex::ResourceSpec {
             message: "acme.directory.v1.OrganizationalUnit",
             resource_type: "directory.acme.example/OrganizationalUnit",
@@ -134,17 +294,33 @@ impl pb::organizational_units_server::OrganizationalUnits for OrganizationalUnit
             soft_delete: true,
         };
         let options = self.options.with_domain("directory.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let body = req.organizational_unit.ok_or_else(|| {
+        let call = servicex::Call::new(
+            self.organizational_unit_hooks.as_ref(),
+            &options,
+            &spec,
+            &ctx,
+        );
+        let handler = servicex::handler(
+            &self.handlers.create_organizational_unit,
+            "CreateOrganizationalUnit",
+        )?;
+        let body = req.organizational_unit.take().ok_or_else(|| {
             options.bad_field(
                 "REQUIRED_FIELD",
                 "organizational_unit",
                 "resource is required",
             )
         })?;
-        let out = call
-            .create("", &req.organizational_unit_id, body, false)
-            .await?;
+        let body = call.create("", &req.organizational_unit_id, body).await?;
+        if false {
+            return Ok(tonic::Response::new(body));
+        }
+        req.organizational_unit = Some(body);
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
+        call.after_create(&out).await?;
         Ok(tonic::Response::new(out))
     }
 
@@ -153,8 +329,7 @@ impl pb::organizational_units_server::OrganizationalUnits for OrganizationalUnit
         request: tonic::Request<pb::UpdateOrganizationalUnitRequest>,
     ) -> Result<tonic::Response<pb::OrganizationalUnit>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
-        let req = request.into_inner();
-        let resource = &self.organizational_unit;
+        let mut req = request.into_inner();
         let spec = servicex::ResourceSpec {
             message: "acme.directory.v1.OrganizationalUnit",
             resource_type: "directory.acme.example/OrganizationalUnit",
@@ -171,17 +346,75 @@ impl pb::organizational_units_server::OrganizationalUnits for OrganizationalUnit
             soft_delete: true,
         };
         let options = self.options.with_domain("directory.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let body = req.organizational_unit.ok_or_else(|| {
+        let call = servicex::Call::new(
+            self.organizational_unit_hooks.as_ref(),
+            &options,
+            &spec,
+            &ctx,
+        );
+        let handler = servicex::handler(
+            &self.handlers.update_organizational_unit,
+            "UpdateOrganizationalUnit",
+        )?;
+        let body = req.organizational_unit.clone().ok_or_else(|| {
             options.bad_field(
                 "REQUIRED_FIELD",
                 "organizational_unit",
                 "resource is required",
             )
         })?;
-        let out = call
-            .update(body, req.update_mask.map(|m| m.paths), false, false)
-            .await?;
+        let existing = match &self.handlers.get_organizational_unit {
+            Some(get) => Some(
+                get.call(
+                    ctx.clone(),
+                    pb::GetOrganizationalUnitRequest {
+                        name: body.name.clone(),
+                    },
+                )
+                .await,
+            ),
+            None => None,
+        };
+        let dry = false;
+        let out = match call
+            .update(
+                body,
+                req.update_mask.clone().map(|m| m.paths),
+                false,
+                existing,
+            )
+            .await?
+        {
+            servicex::Update::Create(value) => {
+                if dry {
+                    return Ok(tonic::Response::new(value));
+                }
+                req.organizational_unit = Some(value);
+                let out = handler
+                    .call(ctx.clone(), req)
+                    .await
+                    .map_err(|e| call.mapped(e))?;
+                call.after_create(&out).await?;
+                out
+            }
+            servicex::Update::Write {
+                value,
+                paths,
+                preview,
+            } => {
+                if dry {
+                    return Ok(tonic::Response::new(preview));
+                }
+                req.organizational_unit = Some(value);
+                req.update_mask = Some(prost_types::FieldMask { paths });
+                let out = handler
+                    .call(ctx.clone(), req)
+                    .await
+                    .map_err(|e| call.mapped(e))?;
+                call.after_update(&out).await?;
+                out
+            }
+        };
         Ok(tonic::Response::new(out))
     }
 
@@ -191,7 +424,6 @@ impl pb::organizational_units_server::OrganizationalUnits for OrganizationalUnit
     ) -> Result<tonic::Response<()>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.organizational_unit;
         let spec = servicex::ResourceSpec {
             message: "acme.directory.v1.OrganizationalUnit",
             resource_type: "directory.acme.example/OrganizationalUnit",
@@ -208,10 +440,46 @@ impl pb::organizational_units_server::OrganizationalUnits for OrganizationalUnit
             soft_delete: true,
         };
         let options = self.options.with_domain("directory.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let deleted = call.delete(&req.name, "", false, false, false).await?;
-        let _ = deleted;
-        let out = ();
+        let call = servicex::Call::new(
+            self.organizational_unit_hooks.as_ref(),
+            &options,
+            &spec,
+            &ctx,
+        );
+        let handler = servicex::handler(
+            &self.handlers.delete_organizational_unit,
+            "DeleteOrganizationalUnit",
+        )?;
+        let name = req.name.clone();
+        let existing = match &self.handlers.get_organizational_unit {
+            Some(get) => Some(
+                get.call(
+                    ctx.clone(),
+                    pb::GetOrganizationalUnitRequest { name: name.clone() },
+                )
+                .await,
+            ),
+            None => None,
+        };
+        let allow_missing = false;
+        match call
+            .delete(&name, "", allow_missing, false, existing)
+            .await?
+        {
+            servicex::Delete::Skip => return Ok(tonic::Response::new(())),
+            servicex::Delete::Proceed(_) => {
+                if false {
+                    return Ok(tonic::Response::new(()));
+                }
+            }
+        }
+        let out = match handler.call(ctx.clone(), req).await {
+            Err(e) if allow_missing && e.code() == tonic::Code::NotFound => {
+                return Ok(tonic::Response::new(()));
+            }
+            result => result.map_err(|e| call.mapped(e))?,
+        };
+        call.after_delete(&name).await?;
         Ok(tonic::Response::new(out))
     }
 
@@ -221,7 +489,6 @@ impl pb::organizational_units_server::OrganizationalUnits for OrganizationalUnit
     ) -> Result<tonic::Response<pb::OrganizationalUnit>, tonic::Status> {
         let ctx = servicex::Context::from_request(&request);
         let req = request.into_inner();
-        let resource = &self.organizational_unit;
         let spec = servicex::ResourceSpec {
             message: "acme.directory.v1.OrganizationalUnit",
             resource_type: "directory.acme.example/OrganizationalUnit",
@@ -238,8 +505,35 @@ impl pb::organizational_units_server::OrganizationalUnits for OrganizationalUnit
             soft_delete: true,
         };
         let options = self.options.with_domain("directory.acme.example");
-        let call = servicex::Call::new(resource, &options, &spec, &ctx);
-        let out = call.undelete(&req.name, "", false).await?;
+        let call = servicex::Call::new(
+            self.organizational_unit_hooks.as_ref(),
+            &options,
+            &spec,
+            &ctx,
+        );
+        let handler = servicex::handler(
+            &self.handlers.undelete_organizational_unit,
+            "UndeleteOrganizationalUnit",
+        )?;
+        let name = req.name.clone();
+        let existing = match &self.handlers.get_organizational_unit {
+            Some(get) => Some(
+                get.call(
+                    ctx.clone(),
+                    pb::GetOrganizationalUnitRequest { name: name.clone() },
+                )
+                .await,
+            ),
+            None => None,
+        };
+        let preview = call.undelete(&name, "", existing).await?;
+        if false {
+            return Ok(tonic::Response::new(preview.unwrap_or_default()));
+        }
+        let out = handler
+            .call(ctx.clone(), req)
+            .await
+            .map_err(|e| call.mapped(e))?;
         Ok(tonic::Response::new(out))
     }
 }

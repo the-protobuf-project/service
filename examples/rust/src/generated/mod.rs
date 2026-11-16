@@ -11,6 +11,8 @@
 
 pub mod servicex;
 
+pub mod app;
+
 pub mod acme;
 pub mod archive;
 pub mod streams;

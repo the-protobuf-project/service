@@ -1,61 +1,50 @@
 //! Exercises every generated RPC shape over a real tonic connection.
-use futures_core::Stream;
 use service_rust_examples::{
     pb::streams::v1::{Entry, entries_client::EntriesClient},
     service::{
-        servicex::Options,
-        streams::v1::{EntriesCustom, EntriesServer},
+        servicex::{Options, ResponseStream},
+        streams::v1::{EntriesHandlers, EntriesServer},
     },
 };
-use std::{pin::Pin, time::Duration};
+use std::time::Duration;
 use tokio_stream::wrappers::TcpListenerStream;
-use tonic::{Request, Response, Status, Streaming};
+use tonic::{Request, Status, Streaming};
 
-type Entries = Pin<Box<dyn Stream<Item = Result<Entry, Status>> + Send + 'static>>;
-struct Handler;
 fn entry(value: &str) -> Entry {
     Entry {
         r#type: value.into(),
     }
 }
 
-#[tonic::async_trait]
-impl EntriesCustom for Handler {
-    async fn wrap(&self, request: Request<String>) -> Result<Response<Vec<u8>>, Status> {
-        Ok(Response::new(request.into_inner().into_bytes()))
-    }
-    async fn watch(&self, request: Request<Entry>) -> Result<Response<Entries>, Status> {
-        // Metadata must survive the generated forwarding layer.
-        if request
-            .metadata()
-            .get("x-test")
-            .and_then(|v| v.to_str().ok())
-            != Some("watch")
-        {
-            return Err(Status::invalid_argument("missing metadata"));
-        }
-        let value = request.into_inner();
-        Ok(Response::new(Box::pin(tokio_stream::iter([
-            Ok(value.clone()),
-            Ok(value),
-            Err(Status::aborted("stream failed")),
-        ]))))
-    }
-    async fn upload(&self, request: Request<Streaming<Entry>>) -> Result<Response<Entry>, Status> {
-        let mut input = request.into_inner();
-        let mut values = Vec::new();
-        while let Some(value) = input.message().await? {
-            values.push(value.r#type);
-        }
-        Ok(Response::new(entry(&values.join(","))))
-    }
-    async fn exchange(
-        &self,
-        request: Request<Streaming<Entry>>,
-    ) -> Result<Response<Entries>, Status> {
-        // Forward each message as it arrives, without waiting for the client to close.
-        Ok(Response::new(Box::pin(request.into_inner())))
-    }
+// One handler per RPC, every shape: unary, server-, client- and bidirectional
+// streaming.
+fn handlers() -> EntriesHandlers {
+    EntriesHandlers::default()
+        .wrap(|_, value: String| async move { Ok(value.into_bytes()) })
+        .watch(|ctx, value: Entry| async move {
+            // Metadata must survive the generated forwarding layer.
+            if ctx.metadata.get("x-test").and_then(|v| v.to_str().ok()) != Some("watch") {
+                return Err(Status::invalid_argument("missing metadata"));
+            }
+            let out: ResponseStream<Entry> = Box::pin(tokio_stream::iter([
+                Ok(value.clone()),
+                Ok(value),
+                Err(Status::aborted("stream failed")),
+            ]));
+            Ok(out)
+        })
+        .upload(|_, mut input: Streaming<Entry>| async move {
+            let mut values = Vec::new();
+            while let Some(value) = input.message().await? {
+                values.push(value.r#type);
+            }
+            Ok(entry(&values.join(",")))
+        })
+        .exchange(|_, input: Streaming<Entry>| async move {
+            // Forward each message as it arrives, without waiting for the client to close.
+            let out: ResponseStream<Entry> = Box::pin(input);
+            Ok(out)
+        })
 }
 
 #[tokio::test]
@@ -71,8 +60,8 @@ async fn all_rpc_kinds_round_trip() {
         let server = tokio::spawn(
             tonic::transport::Server::builder()
                 .add_service(
-                    EntriesServer::new(options)
-                        .with_custom(Handler)
+                    EntriesServer::new(options, handlers())
+                        .unwrap()
                         .into_service(),
                 )
                 .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async {
