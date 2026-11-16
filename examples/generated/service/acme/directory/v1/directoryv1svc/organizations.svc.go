@@ -5,8 +5,8 @@
 // source: acme/directory/v1/directory.proto
 //
 // AIP standard-method server for acme.directory.v1.Organizations.
-// annotations: entity.v1 v1.6.9, service.v1 dev
-// engine:      protokit v1.3.8
+// annotations: entity.v1 v1.7.1, service.v1 dev
+// engine:      protokit v1.4.0
 //
 // service — https://github.com/the-protobuf-project/service
 
@@ -340,7 +340,9 @@ func (s *OrganizationsServer) DeleteOrganization(ctx context.Context, req *direc
 		if req.GetValidateOnly() {
 			return nil
 		}
-		err := s.repos.Organizations.Delete(ctx, name)
+		// The etag guards the delete itself (repox.IfMatch): a write landing
+		// after the check above is caught by the repository, not let through.
+		err := s.repos.Organizations.Delete(repox.IfMatch(ctx, req.GetEtag()), name)
 		if req.GetAllowMissing() && servicex.IsNotFound(err) {
 			return nil
 		}

@@ -15,6 +15,7 @@ package archivev1svc
 import (
 	"context"
 
+	"example.com/gen/repository/repox"
 	"example.com/gen/repository/v1/archiveexample"
 	"example.com/gen/service/servicex"
 	"example.com/test/gen"
@@ -96,6 +97,9 @@ func (s *DocumentsServer) Repositories() DocumentsRepositories { return s.repos 
 // methods. The server runs each through Options().Run, traced and with its
 // error rendered by the translator, so an implementation returns plain errors:
 // a *problem.Problem, an error wrapping a registered sentinel, or a status.
+//
+// A streaming method's stream carries the traced context: its Context is
+// the one the method runs in.
 type DocumentsLogic interface {
 	GetDocumentByHand(ctx context.Context, req *archivev1.GetDocumentRequest) (*archivev1.Document, error)
 	UndeleteDocument(ctx context.Context, req *archivev1.UndeleteDocumentRequest) (*archivev1.Document, error)
@@ -234,7 +238,9 @@ func (s *DocumentsServer) DeleteDocument(ctx context.Context, req *archivev1.Del
 			out = existing
 			return nil
 		}
-		err := s.repos.Documents.Delete(ctx, name)
+		// The etag guards the delete itself (repox.IfMatch): a write landing
+		// after the check above is caught by the repository, not let through.
+		err := s.repos.Documents.Delete(repox.IfMatch(ctx, req.GetEtag()), name)
 		if req.GetAllowMissing() && servicex.IsNotFound(err) {
 			return nil
 		}

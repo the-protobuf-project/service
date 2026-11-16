@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 env:
-  STORE_VERSION: v1.6.9
+  STORE_VERSION: v1.7.1
   BUF_VERSION: 1.72.0
   RUNTIME_GO_REF: main
 
@@ -52,6 +52,10 @@ jobs:
           cache: true
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      # The application shell builds runtime-rs's tpp-grpc, whose buf.validate
+      # types (prost-protovalidate-types) compile their protos with protoc.
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Check generated fixtures
         env:
           RUSTUP_TOOLCHAIN: stable

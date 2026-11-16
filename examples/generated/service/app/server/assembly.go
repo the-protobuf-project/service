@@ -2,11 +2,11 @@
 // versions:
 // 	protoc-gen-service dev
 // 	protoc (unknown)
-// source: acme/booking/v1/booking.proto, acme/calendar/v1/calendar.proto, acme/directory/v1/directory.proto, acme/idempotency/v1/idempotency.proto, acme/webhook/v1/webhook.proto
+// source: acme/activity/v1/activity.proto, acme/booking/v1/booking.proto, acme/calendar/v1/calendar.proto, acme/directory/v1/directory.proto, acme/idempotency/v1/idempotency.proto, acme/webhook/v1/webhook.proto
 //
 // Application shell of acme: the servers, assembled on one connection, and their background work.
-// annotations: entity.v1 v1.6.9, service.v1 dev
-// engine:      protokit v1.3.8
+// annotations: entity.v1 v1.7.1, service.v1 dev
+// engine:      protokit v1.4.0
 //
 // service — https://github.com/the-protobuf-project/service
 
@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/the-protobuf-project/runtime-go/events"
+	"github.com/the-protobuf-project/service/examples/generated/service/acme/activity/v1/activityv1svc"
 	"github.com/the-protobuf-project/service/examples/generated/service/acme/booking/v1/bookingv1svc"
 	"github.com/the-protobuf-project/service/examples/generated/service/acme/calendar/v1/calendarv1svc"
 	"github.com/the-protobuf-project/service/examples/generated/service/acme/directory/v1/directoryv1svc"
@@ -38,6 +39,8 @@ import (
 type Services struct {
 	Deps
 
+	// Activity serves acme.activity.v1.Activity.
+	Activity *activityv1svc.ActivityServer
 	// Holds serves acme.booking.v1.Holds.
 	Holds *bookingv1svc.HoldsServer
 	// Reservations serves acme.booking.v1.Reservations.
@@ -68,6 +71,10 @@ func New(d *Deps, p Provision) (*Services, error) {
 	s := &Services{Deps: *d, provision: p}
 	r := d.Repos
 	_ = r
+	s.Activity = activityv1svc.NewActivityServer(activityv1svc.ActivityRepositories{}, nil, append(ServerOptions("activity.acme.example"), p.ServerOptions...)...)
+	if p.Logic.Activity != nil {
+		s.Activity.WithLogic(p.Logic.Activity)
+	}
 	s.Holds = bookingv1svc.NewHoldsServer(bookingv1svc.HoldsRepositories{Holds: r.Booking.Holds}, p.Hooks.Holds, append(ServerOptions("booking.acme.example"), p.ServerOptions...)...)
 	if p.Logic.Holds != nil {
 		s.Holds.WithLogic(p.Logic.Holds)

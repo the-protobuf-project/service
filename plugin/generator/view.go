@@ -133,16 +133,30 @@ type serviceView struct {
 	Methods          []*methodView
 	Hooks            []hookView
 	Custom           []string // custom method names, for the doc comment
-	// Logic are the unary custom methods <S>Logic declares and the server
-	// runs through Options().Run; streaming ones stay on the embedded
-	// Unimplemented server.
+	// Logic are the custom methods <S>Logic declares and the server runs
+	// through Options().Run: unary and streaming alike.
 	Logic  []logicView
 	EmptyQ string // emptypb qualifier
 }
 
-// logicView is one unary custom method.
+// logicView is one custom method.
 type logicView struct {
 	GoName, Req, Resp string
+	// Stream is "" for a unary method, else "server", "client" or "bidi".
+	Stream string
+}
+
+// streamKind is m's streaming shape: "" for unary.
+func streamKind(m *protogen.Method) string {
+	switch c, s := m.Desc.IsStreamingClient(), m.Desc.IsStreamingServer(); {
+	case c && s:
+		return "bidi"
+	case c:
+		return "client"
+	case s:
+		return "server"
+	}
+	return ""
 }
 
 type resourceView struct {
@@ -258,9 +272,11 @@ func serviceFileView(pkg *spec.Package, svc *spec.Service, servicex, _ string) (
 	for _, m := range svc.Methods {
 		if m.Kind == spec.Custom {
 			v.Custom = append(v.Custom, m.Proto.GoName)
-			if !m.Proto.Desc.IsStreamingClient() && !m.Proto.Desc.IsStreamingServer() {
-				v.Logic = append(v.Logic, logicView{GoName: m.Proto.GoName, Req: im.qualify(m.Proto.Input), Resp: im.qualify(m.Proto.Output)})
+			lv := logicView{GoName: m.Proto.GoName, Req: im.qualify(m.Proto.Input), Resp: im.qualify(m.Proto.Output), Stream: streamKind(m.Proto)}
+			if lv.Stream != "" {
+				im.use("google.golang.org/grpc", "grpc")
 			}
+			v.Logic = append(v.Logic, lv)
 			continue
 		}
 		r := rv[m.Resource]
@@ -298,7 +314,7 @@ func serviceFileView(pkg *spec.Package, svc *spec.Service, servicex, _ string) (
 		if m.Items != nil {
 			mv.Items, mv.Next = m.Items.GoName, m.NextPageToken.GoName
 		}
-		if m.Kind == spec.List {
+		if m.Kind == spec.List || (m.Kind == spec.Delete || m.Kind == spec.Undelete) && m.Etag != nil && m.Resource.HasEtag {
 			im.use(repoxOf(m.Resource), "repox")
 		}
 		if m.ReturnsEmpty {

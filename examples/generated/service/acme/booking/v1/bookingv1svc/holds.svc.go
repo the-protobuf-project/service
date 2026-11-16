@@ -5,8 +5,8 @@
 // source: acme/booking/v1/booking.proto
 //
 // AIP standard-method server for acme.booking.v1.Holds.
-// annotations: entity.v1 v1.6.9, service.v1 dev
-// engine:      protokit v1.3.8
+// annotations: entity.v1 v1.7.1, service.v1 dev
+// engine:      protokit v1.4.0
 //
 // service — https://github.com/the-protobuf-project/service
 
@@ -111,6 +111,9 @@ func (s *HoldsServer) Repositories() HoldsRepositories { return s.repos }
 // methods. The server runs each through Options().Run, traced and with its
 // error rendered by the translator, so an implementation returns plain errors:
 // a *problem.Problem, an error wrapping a registered sentinel, or a status.
+//
+// A streaming method's stream carries the traced context: its Context is
+// the one the method runs in.
 type HoldsLogic interface {
 	ReleaseHold(ctx context.Context, req *bookingv1.ReleaseHoldRequest) (*bookingv1.Hold, error)
 }

@@ -392,7 +392,7 @@ func appFileView(model *spec.Model, s Settings) (*appView, error) {
 				Grpc: svc.Grpc.Name, Generated: svc.Standard() || hasLogic(svc), Hooks: svc.Standard(), Domain: svc.Domain,
 			}
 			for _, m := range svc.Methods {
-				if m.Kind == spec.Custom && !m.Proto.Desc.IsStreamingClient() && !m.Proto.Desc.IsStreamingServer() {
+				if m.Kind == spec.Custom {
 					as.Logic = append(as.Logic, m.Proto.GoName)
 				}
 			}

@@ -15,9 +15,10 @@ futures-core = "0.3"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 # The application shell (src/generated/app): runtime-rs's configuration loader
-# and hybrid gRPC/REST/MCP server. On feat/config until tpp-config is merged.
-config = { package = "tpp-config", git = "https://github.com/the-protobuf-project/runtime-rs", branch = "feat/config" }
-grpc = { package = "tpp-grpc", git = "https://github.com/the-protobuf-project/runtime-rs", branch = "feat/config", default-features = false, features = ["tls"] }
+# and hybrid gRPC/REST/MCP server, pinned to the commit that merged tpp-config
+# (runtime-rs#43) until runtime-rs is released.
+config = { package = "tpp-config", git = "https://github.com/the-protobuf-project/runtime-rs", rev = "f2ca844" }
+grpc = { package = "tpp-grpc", git = "https://github.com/the-protobuf-project/runtime-rs", rev = "f2ca844", default-features = false, features = ["tls"] }
 
 [build-dependencies]
 prost = "0.14"

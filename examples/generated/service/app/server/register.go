@@ -2,11 +2,11 @@
 // versions:
 // 	protoc-gen-service dev
 // 	protoc (unknown)
-// source: acme/booking/v1/booking.proto, acme/calendar/v1/calendar.proto, acme/directory/v1/directory.proto, acme/idempotency/v1/idempotency.proto, acme/webhook/v1/webhook.proto
+// source: acme/activity/v1/activity.proto, acme/booking/v1/booking.proto, acme/calendar/v1/calendar.proto, acme/directory/v1/directory.proto, acme/idempotency/v1/idempotency.proto, acme/webhook/v1/webhook.proto
 //
 // Application shell of acme: every server on gRPC, REST and MCP.
-// annotations: entity.v1 v1.6.9, service.v1 dev
-// engine:      protokit v1.3.8
+// annotations: entity.v1 v1.7.1, service.v1 dev
+// engine:      protokit v1.4.0
 //
 // service — https://github.com/the-protobuf-project/service
 
@@ -18,6 +18,7 @@ package server
 
 import (
 	"github.com/the-protobuf-project/runtime-go/grpc"
+	"github.com/the-protobuf-project/service/examples/generated/service/acme/activity/v1/activityv1svc"
 	"github.com/the-protobuf-project/service/examples/generated/service/acme/booking/v1/bookingv1svc"
 	"github.com/the-protobuf-project/service/examples/generated/service/acme/calendar/v1/calendarv1svc"
 	"github.com/the-protobuf-project/service/examples/generated/service/acme/directory/v1/directoryv1svc"
@@ -28,6 +29,7 @@ import (
 func (s *Services) Options() []grpc.Option {
 	var opts []grpc.Option
 	for _, o := range [][]grpc.Option{
+		activityv1svc.RegisterAll(activityv1svc.Servers{Activity: s.registeredActivity()}),
 		bookingv1svc.RegisterAll(bookingv1svc.Servers{Holds: s.registeredHolds(), Reservations: s.registeredReservations()}),
 		calendarv1svc.RegisterAll(calendarv1svc.Servers{Calendars: s.registeredCalendars(), Events: s.registeredEvents()}),
 		directoryv1svc.RegisterAll(directoryv1svc.Servers{OrganizationalUnits: s.registeredOrganizationalUnits(), Organizations: s.registeredOrganizations()}),
@@ -43,6 +45,7 @@ func (s *Services) Options() []grpc.Option {
 // Register registers every service on a standalone gRPC server, the one a
 // test serves over bufconn.
 func (s *Services) Register(g *grpc.GRPCServer) {
+	activityv1svc.RegisterGRPC(g, activityv1svc.Servers{Activity: s.registeredActivity()})
 	bookingv1svc.RegisterGRPC(g, bookingv1svc.Servers{Holds: s.registeredHolds(), Reservations: s.registeredReservations()})
 	calendarv1svc.RegisterGRPC(g, calendarv1svc.Servers{Calendars: s.registeredCalendars(), Events: s.registeredEvents()})
 	directoryv1svc.RegisterGRPC(g, directoryv1svc.Servers{OrganizationalUnits: s.registeredOrganizationalUnits(), Organizations: s.registeredOrganizations()})

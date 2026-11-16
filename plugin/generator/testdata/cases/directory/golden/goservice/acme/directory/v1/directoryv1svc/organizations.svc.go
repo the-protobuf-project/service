@@ -340,7 +340,9 @@ func (s *OrganizationsServer) DeleteOrganization(ctx context.Context, req *direc
 		if req.GetValidateOnly() {
 			return nil
 		}
-		err := s.repos.Organizations.Delete(ctx, name)
+		// The etag guards the delete itself (repox.IfMatch): a write landing
+		// after the check above is caught by the repository, not let through.
+		err := s.repos.Organizations.Delete(repox.IfMatch(ctx, req.GetEtag()), name)
 		if req.GetAllowMissing() && servicex.IsNotFound(err) {
 			return nil
 		}

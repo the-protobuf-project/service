@@ -112,6 +112,9 @@ func (s *ReservationsServer) Repositories() ReservationsRepositories { return s.
 // methods. The server runs each through Options().Run, traced and with its
 // error rendered by the translator, so an implementation returns plain errors:
 // a *problem.Problem, an error wrapping a registered sentinel, or a status.
+//
+// A streaming method's stream carries the traced context: its Context is
+// the one the method runs in.
 type ReservationsLogic interface {
 	CreateReservation(ctx context.Context, req *bookingv1.CreateReservationRequest) (*bookingv1.Reservation, error)
 }

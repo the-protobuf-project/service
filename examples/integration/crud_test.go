@@ -4,6 +4,8 @@
 package integration
 
 import (
+	"context"
+
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -195,4 +197,36 @@ func TestDeleteUndelete(t *testing.T) {
 	}
 	_, err = s.UndeleteOrganization(c, &directoryv1.UndeleteOrganizationRequest{Name: org.GetName()})
 	wantStatus(t, err, codes.AlreadyExists, servicex.ReasonAlreadyExists)
+}
+
+// racingHooks writes the organization from BeforeDelete, after the server checked the request's etag and before the repository
+// writes: a concurrent writer landing in exactly that window.
+type racingHooks struct {
+	directoryv1svc.NopOrganizationsHooks
+	repos directory.OrganizationRepository
+}
+
+func (h racingHooks) BeforeDeleteOrganization(ctx context.Context, name string, _ bool) error {
+	_, err := h.repos.Update(ctx, &directoryv1.Organization{Name: name, DisplayName: "raced"}, []string{"display_name"})
+	return err
+}
+
+// TestEtagGuardsTheWrite: the request's etag reaches the repository's write
+// (repox.IfMatch), so a write landing after the server's own check is caught
+// there -- the delete is refused with ABORTED and the record left as it is.
+func TestEtagGuardsTheWrite(t *testing.T) {
+	repos := directory.New(open(t))
+	s := directoryv1svc.NewOrganizationsServer(directoryv1svc.OrganizationsRepositories{Organizations: repos.Organizations}, racingHooks{repos: repos.Organizations})
+	c := ctx(t)
+	org := must(s.CreateOrganization(c, &directoryv1.CreateOrganizationRequest{OrganizationId: "acme", Organization: &directoryv1.Organization{DisplayName: "Acme"}}))
+
+	_, err := s.DeleteOrganization(c, &directoryv1.DeleteOrganizationRequest{Name: org.GetName(), Etag: org.GetEtag()})
+	wantStatus(t, err, codes.Aborted, servicex.ReasonConcurrentModification)
+	got := must(s.GetOrganization(c, &directoryv1.GetOrganizationRequest{Name: org.GetName()}))
+	if got.GetDeleteTime() != nil || got.GetDisplayName() != "raced" {
+		t.Fatalf("the raced delete went through: %v", got)
+	}
+
+	// Without an etag the delete is unguarded, as before.
+	must(s.DeleteOrganization(c, &directoryv1.DeleteOrganizationRequest{Name: org.GetName()}))
 }

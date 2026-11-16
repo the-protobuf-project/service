@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -503,4 +504,43 @@ func IDOf(name string) string {
 		return name[i+1:]
 	}
 	return name
+}
+
+// The streams a streaming custom method's logic is handed: the server's
+// stream, its Context replaced by the one the method runs in (the traced
+// one, from Options.Run).
+type serverStream[Resp any] struct {
+	grpc.ServerStreamingServer[Resp]
+	ctx context.Context
+}
+
+func (s serverStream[Resp]) Context() context.Context { return s.ctx }
+
+// ServerStream is stream with ctx as its Context.
+func ServerStream[Resp any](ctx context.Context, stream grpc.ServerStreamingServer[Resp]) grpc.ServerStreamingServer[Resp] {
+	return serverStream[Resp]{stream, ctx}
+}
+
+type clientStream[Req, Resp any] struct {
+	grpc.ClientStreamingServer[Req, Resp]
+	ctx context.Context
+}
+
+func (s clientStream[Req, Resp]) Context() context.Context { return s.ctx }
+
+// ClientStream is stream with ctx as its Context.
+func ClientStream[Req, Resp any](ctx context.Context, stream grpc.ClientStreamingServer[Req, Resp]) grpc.ClientStreamingServer[Req, Resp] {
+	return clientStream[Req, Resp]{stream, ctx}
+}
+
+type bidiStream[Req, Resp any] struct {
+	grpc.BidiStreamingServer[Req, Resp]
+	ctx context.Context
+}
+
+func (s bidiStream[Req, Resp]) Context() context.Context { return s.ctx }
+
+// BidiStream is stream with ctx as its Context.
+func BidiStream[Req, Resp any](ctx context.Context, stream grpc.BidiStreamingServer[Req, Resp]) grpc.BidiStreamingServer[Req, Resp] {
+	return bidiStream[Req, Resp]{stream, ctx}
 }
