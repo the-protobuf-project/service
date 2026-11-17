@@ -5,7 +5,7 @@
 // source: acme/activity/v1/activity.proto
 //
 // AIP standard-method server for acme.activity.v1.Activity.
-// annotations: entity.v1 v1.7.1, service.v1 dev
+// annotations: entity.v1 v1.8.0, service.v1 dev
 // engine:      protokit v1.4.0
 //
 // service — https://github.com/the-protobuf-project/service
