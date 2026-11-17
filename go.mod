@@ -19,6 +19,7 @@ module github.com/the-protobuf-project/service
 go 1.26.5
 
 require (
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
 	github.com/the-protobuf-project/protokit v1.4.0
 	github.com/the-protobuf-project/store v1.7.1
 	google.golang.org/genproto/googleapis/api v0.0.0-20261026165753-2ffab32bce7e

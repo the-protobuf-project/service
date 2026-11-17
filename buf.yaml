@@ -34,6 +34,7 @@ modules:
 deps:
   - buf.build/googleapis/googleapis
   - buf.build/the-protobuf-project/store # entity/v1 + store/v1, for the examples
+  - buf.build/bufbuild/protovalidate # buf.validate rules, for the examples
 
 lint:
   use:

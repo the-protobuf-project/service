@@ -12,6 +12,7 @@
 package directoryv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -1067,10 +1068,11 @@ var File_acme_directory_v1_directory_proto protoreflect.FileDescriptor
 
 const file_acme_directory_v1_directory_proto_rawDesc = "" +
 	"\n" +
-	"!acme/directory/v1/directory.proto\x12\x11acme.directory.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x17google/api/client.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x19google/api/resource.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfc\x03\n" +
+	"!acme/directory/v1/directory.proto\x12\x11acme.directory.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x17google/api/client.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x19google/api/resource.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x83\x04\n" +
 	"\fOrganization\x12\x17\n" +
-	"\x04name\x18\x01 \x01(\tB\x03\xe0A\bR\x04name\x12&\n" +
-	"\fdisplay_name\x18\x02 \x01(\tB\x03\xe0A\x02R\vdisplayName\x12'\n" +
+	"\x04name\x18\x01 \x01(\tB\x03\xe0A\bR\x04name\x12-\n" +
+	"\fdisplay_name\x18\x02 \x01(\tB\n" +
+	"\xe0A\x02\xbaH\x04r\x02\x18?R\vdisplayName\x12'\n" +
 	"\fregistration\x18\x03 \x01(\tB\x03\xe0A\x05R\fregistration\x12@\n" +
 	"\vcreate_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampB\x03\xe0A\x03R\n" +
 	"createTime\x12@\n" +

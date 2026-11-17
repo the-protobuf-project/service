@@ -7,6 +7,7 @@ use service_rust_examples::{
     service::{app, servicex},
 };
 use tonic::{Code, Status};
+use tonic_types::StatusExt;
 
 const DESCRIPTORS: &[u8] = include_bytes!("../descriptor.bin");
 
@@ -144,6 +145,29 @@ async fn the_hybrid_server_serves_the_assembled_services() {
         .await
         .unwrap_err();
     assert_eq!(err.code(), Code::InvalidArgument);
+
+    // buf.validate runs before every handler: a display name over its
+    // max_len is refused field by field, and a sound one reaches the handler.
+    let create = |display_name: String| directory::CreateOrganizationRequest {
+        organization: Some(directory::Organization {
+            display_name,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let err = client
+        .create_organization(create("a".repeat(64)))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), Code::InvalidArgument);
+    let bad = err.get_details_bad_request().expect("a BadRequest detail");
+    assert_eq!(bad.field_violations[0].field, "organization.display_name");
+    assert_eq!(bad.field_violations[0].reason, "string.max_len");
+    let err = client
+        .create_organization(create("Acme".into()))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), Code::Unimplemented, "{err:?}");
 
     server.stop().await.unwrap();
 }

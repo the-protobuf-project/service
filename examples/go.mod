@@ -3,6 +3,7 @@ module github.com/the-protobuf-project/service/examples
 go 1.26.5
 
 require (
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.32.0
 	github.com/lib/pq v1.12.3
 	github.com/the-protobuf-project/runtime-go/agents v0.0.0-20261021141431-6d4588022f2b
@@ -19,7 +20,6 @@ require (
 )
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2 // indirect
 	buf.build/go/protovalidate v1.4.0 // indirect
 	cel.dev/cel-go v0.32.0 // indirect
 	cel.dev/expr v0.25.3 // indirect

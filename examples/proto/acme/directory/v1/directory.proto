@@ -7,6 +7,7 @@ syntax = "proto3";
 
 package acme.directory.v1;
 
+import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
@@ -129,7 +130,10 @@ message Organization {
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
   // What the organization is called.
-  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+  string display_name = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (buf.validate.field).string.max_len = 63
+  ];
 
   // A tax or registry number, fixed once set.
   string registration = 3 [(google.api.field_behavior) = IMMUTABLE];
