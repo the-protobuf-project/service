@@ -1,9 +1,9 @@
 # protoc-gen-service
 
 `protoc-gen-service` generates the AIP standard-method service layer that
-consumers of [protoc-gen-store] otherwise write by hand: one gRPC server per
-service, with a hooks interface for the business logic around each standard
-method, and the wiring that serves it on gRPC, REST and MCP through
+services otherwise write by hand: one gRPC server per service, running each
+standard method's checks (names, ids, masks, etags, field behavior) and a
+hooks interface for the business logic around it, and the wiring that serves it on gRPC, REST and MCP through
 runtime-go's HybridServer. It also generates change feeds and store adapters
 for runtime-go's `events` and `grpc/idempotency` packages, and error reasons
 declared in proto (AIP-193).
@@ -13,7 +13,56 @@ conforming API needs no annotation. A method that does not fit stays custom:
 the generated server leaves it to the embedded `Unimplemented…Server`, and you
 write only those.
 
-## What it generates
+## Two models: handlers (default) and `store=true`
+
+By default a generated server is a **handler model**: every RPC is answered
+by a handler the application registers (`<S>Handlers`, the request in and
+the response out: a query of your database, a call to another service), and
+the server runs each standard method's checks and hooks around it. Nothing
+about persistence is generated, and no other plugin's output is needed. Go
+and Rust generate the same model.
+
+`store=true` generates **repository-backed** servers instead: each standard
+method persists through [protoc-gen-store]'s generated repositories (Go:
+`<S>Repositories` over `repox`; Rust: runtime-rs's
+`database::repository::Repository`). This is the output the examples use,
+with the change feeds, store adapters and Go application shell built over
+those repositories. `cache=true` (with `store=true`) also wires
+[protoc-gen-cache]'s caches from `cache.v1` annotations; see
+[Caching](#caching-cachetrue).
+
+| | handler model (default) | `store=true` |
+|---|---|---|
+| Server | `New<S>Server(<S>Handlers, <S>Hooks, ...) (*<S>Server, error)`, refusing missing handlers (`servicex.MissingHandlers`) | `New<S>Server(<S>Repositories, <S>Hooks, ...)`, custom methods through `WithLogic` |
+| Needs | `go_module` | `go_module`, `repository_module`, protoc-gen-store's repository output |
+| Feeds, store adapters | not generated (a warning names them) | generated |
+| Go `app=` | refused: the Go shell builds over the repositories | generated |
+
+### The handler model (Go)
+
+```go
+srv, err := directoryv1svc.NewOrganizationsServer(directoryv1svc.OrganizationsHandlers{
+	GetOrganization: func(ctx context.Context, req *directoryv1.GetOrganizationRequest) (*directoryv1.Organization, error) {
+		return db.Get(ctx, req.GetName()) // servicex.ErrNotFound when there is none
+	},
+	// ... one per RPC, custom and streaming ones included
+}, orgHooks{}, servicex.WithTranslator(directoryv1svc.NewTranslator()))
+```
+
+Around each handler the server runs what the Rust table below lists: the
+name's shape; List's parent, `ParentCheck` and `page_size`; Create's id,
+parent, OUTPUT_ONLY clearing, REQUIRED, `ParentCheck`, `Validate`,
+`BeforeCreate`, `validate_only`, `AfterCreate`; Update's mask and, with the
+stored record read through the service's own Get handler, its etag,
+IMMUTABLE fields, the merge, REQUIRED and `allow_missing`; Delete's and
+Undelete's etag, deleted state, `allow_missing`, `force` and `validate_only`.
+An Update handler receives the merged record carrying the caller's etag and
+the canonical mask; handlers that write enforce the etag in the write.
+Handlers return `servicex.ErrNotFound`, `ErrAlreadyExists`, `ErrConflict`
+and `ErrInvalidArgument` (or errors wrapping them) for the standard
+outcomes, rendered with the reasons below.
+
+## What it generates (`store=true`)
 
 For each proto package, into `<proto package path>/<go package>svc/`:
 
@@ -58,6 +107,7 @@ plugins:
     strategy: all
     opt:
       - go_module=example.com/gen/service          # import path of this out dir
+      - store=true                                  # repository-backed servers
       - repository_module=example.com/gen/repository
       - config=layout.yaml                          # the store's datasources, plus bindings
 ```
@@ -65,13 +115,18 @@ plugins:
 | Opt | Default | |
 |---|---|---|
 | `go_module` | required | Import path of the out directory. |
-| `repository_module` | required | protoc-gen-store's repository `go_module`. |
+| `store` | `false` | Repository-backed servers over protoc-gen-store's repositories; without it, the handler model. |
+| `repository_module` | required with `store=true` | protoc-gen-store's repository `go_module`. |
+| `cache` | `false` | With `store=true`: wire protoc-gen-cache's caches from `cache.v1` annotations. Refused without `store=true`. |
+| `cache_module` | required with `cache=true` (Go) | protoc-gen-cache's output import path. |
 | `config` | | `service.yaml`: the store's `datasources`/`strip_version` layout (so repository packages resolve to the store's names) and `bindings`. |
 | `grpc_package`, `gateway_package`, `mcp_package` | `{import_path}` | Where the bindings live: templates over `{import_path}`, `{package}`, `{proto_dir}`. |
 | `gateway`, `mcp` | `true` | Register REST and MCP. |
 | `error_domain` | `google.api.default_host` | ErrorInfo domain of the generated servers. |
 | `package_suffix` | `svc` | |
-| `app` | | Also generate the application shell of this name (below). |
+| `app` | | Also generate the application shell of this name (below). Go: needs `store=true`. |
+| `rust_repository_module` | `crate::repository` | Rust, `store=true`: where protoc-gen-store's `lang=rust` repositories live (`<module>::<package path>`), with protoc-gen-cache's `cache` module beside each. |
+| `rust_database` | `postgres` | Rust app shell, `store=true`: the SQL dialect it opens (`postgres`, `mysql`, `sqlite`). |
 
 `bindings` places the bindings per proto package, for a module whose stubs
 live elsewhere (the BSR's `…/grpc/go/…/<pkg>grpc` layout, standalone gateway):
@@ -274,6 +329,63 @@ metadata.
 Change feeds and the event and idempotency record adapters read through the
 `servicex::Repository<M>` trait, implemented over the same persistence layer.
 
+### Rust `store=true`
+
+With `store=true` each service also gets `<S>Repositories`, one
+`Arc<dyn database::repository::Repository<M>>` per resource (runtime-rs's
+`tpp-database`), and `<S>Handlers::with_repositories(&repos)`, which answers
+every standard method from them; custom methods stay yours to register. The
+checks and hooks above run around these handlers unchanged, so the semantics
+are the Go repository-backed servers': name checks, `ParentCheck`,
+OUTPUT_ONLY clearing, REQUIRED and IMMUTABLE checks, `validate_only`,
+`allow_missing` (an update finding nothing creates), etags (the update's
+record carries the caller's, delete and undelete pass it as `if_match`),
+soft delete (Delete returns the record as `get` still reads it), and List's
+paging, filter, order, `show_deleted` and parent (`ListInput.parent`, AIP-159
+`-` ids included). A create without an id leaves the name to the repository,
+`<parent>/<collection>/` for a nested resource, and it mints a ULID, as Go's
+`repox` does. Repository errors map as Go maps `repox`'s:
+
+| `database::Error` | Code | Reason |
+|---|---|---|
+| `NotFound` | NOT_FOUND | `NOT_FOUND` |
+| `AlreadyExists` | ALREADY_EXISTS | `ALREADY_EXISTS` |
+| `Conflict` | ABORTED | `CONCURRENT_MODIFICATION` |
+| `Invalid` | INVALID_ARGUMENT | `INVALID_ARGUMENT` |
+| `Timeout` / `Unimplemented` (e.g. undelete without soft delete) / other | DEADLINE_EXCEEDED / UNIMPLEMENTED / INTERNAL | |
+
+The crate depends on `tpp-database` (with the `orm-*` feature of
+`rust_database`). With `app=<name>`, the shell adds `[database]` (`url`,
+`max_connections`) to the configuration, `app::open_database`,
+`app::Repositories` with `app::repositories(db, pool)` (calling each proto
+package's `repositories` from `rust_repository_module`, which protoc-gen-store
+`lang=rust target=repository` generates), and `app::Handlers::with_repositories`;
+`app::run` opens the database, builds the repositories and fills the
+handlers before assembling. See [examples/rust-store](examples/rust-store).
+
+## Caching (`cache=true`)
+
+`cache=true` requires `store=true` and reads `(cache.v1.cache)` from your
+protos.
+
+- **Go:** for each service with a resource whose `(cache.v1.cache).list` is
+  enabled, `cache.svc.go` declares `Cached<S>Repositories(ctx, provider,
+  observe, repos)`, which puts protoc-gen-cache's list cache
+  (`<cache_module>/<database>/<schema>cache`, `New<Model>ListCache(...).Wrap`)
+  in front of the repository and has it observe the connection's writes. The
+  Go app shell calls it when `[cache]` is enabled; a cache that fails to open
+  is logged and left off. Record caches decorate the GORM stores under a
+  repository and are scoped by a tenant only the deployment knows: wire them
+  with the repository package's `With<Model>Store`.
+- **Rust:** the app shell adds `[cache]` (`enabled`, `address`, `prefix`,
+  `database`; Redis or Dragonfly through `tpp-cache`) and
+  `app::cache_repositories(repos, Arc<cache::DB>)`, which passes every
+  package with `cache.v1` annotations through
+  `<rust_repository_module>::<package>::cache::cache_repositories`, the
+  `cache.rs` protoc-gen-cache `lang=rust` writes beside protoc-gen-store's
+  `mod.rs`. Without `app=` there is nothing to wire: wrap a package's
+  repositories yourself before `with_repositories`.
+
 `app=<name>` also generates the Rust application shell under `app/`, over
 runtime-rs (`tpp-config`, `tpp-grpc`):
 
@@ -297,7 +409,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 The crate depends on `tpp-config` and `tpp-grpc` (with its `tls` feature), and
-`serde` with `derive`.
+`serde` with `derive`; with `store=true` also `tpp-database`, and with
+`cache=true` `tpp-cache`.
 
 The Rust target uses tonic 0.14, prost/prost-types 0.14, tonic-types 0.14,
 prost-reflect 0.16 with `serde`, futures-core 0.3, and serde_json 1. See the
@@ -328,3 +441,4 @@ local runtime-go checkout (CI does the same; see `.github/workflows/test.yaml`).
 Apache-2.0.
 
 [protoc-gen-store]: https://github.com/the-protobuf-project/store
+[protoc-gen-cache]: https://github.com/the-protobuf-project/cache
