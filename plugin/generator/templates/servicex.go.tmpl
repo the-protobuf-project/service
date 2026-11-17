@@ -6,8 +6,14 @@
 // google.rpc.Status with an ErrorInfo reason), the request checks the standard
 // methods share, and the change-event boundary a dispatcher implements.
 //
+{{- if .Store }}
 // It is generated rather than imported because it speaks the generated
 // repositories' error sentinels (repox), which live in the consumer's tree.
+{{- else }}
+// It is generated rather than imported so that its error sentinels
+// (ErrNotFound, ErrAlreadyExists, ErrConflict, ErrInvalidArgument), which
+// handlers return for the standard outcomes, are the consumer's own.
+{{- end }}
 package servicex
 
 import (
@@ -18,18 +24,23 @@ import (
 	"slices"
 	"strings"
 
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
+{{ if .Store }}	"google.golang.org/genproto/googleapis/rpc/errdetails"
+{{ end -}}
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+{{- if .Store }}
 	"google.golang.org/protobuf/protoadapt"
+{{- end }}
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	"github.com/the-protobuf-project/runtime-go/grpc/problem"
+{{- if .Store }}
 
 	"{{ .RepoxImport }}"
+{{- end }}
 )
 
 // Reasons are the google.rpc.ErrorInfo reasons the generated servers return.
@@ -74,16 +85,30 @@ func (o Op) String() string {
 // forbids (FAILED_PRECONDITION, reason INVALID_STATE unless a Problem names
 // another). The repository sentinels cover the other standard codes.
 var ErrFailedPrecondition = errors.New("failed precondition")
+{{- if not .Store }}
+
+// The sentinels of the standard outcomes. A handler returns one, or an error
+// wrapping one, and the translator renders it with its code and reason:
+// NOT_FOUND, ALREADY_EXISTS, ABORTED (CONCURRENT_MODIFICATION) and
+// INVALID_ARGUMENT. A handler may return a *problem.Problem or a gRPC status
+// instead.
+var (
+	ErrNotFound        = errors.New("not found")
+	ErrAlreadyExists   = errors.New("already exists")
+	ErrConflict        = errors.New("conflict")
+	ErrInvalidArgument = errors.New("invalid argument")
+)
+{{- end }}
 
 // Kinds bind the repository sentinels, and ErrFailedPrecondition, to their
 // status codes and default reasons. NewTranslator registers them; a consumer
 // building a problem.Translator of its own registers them beside its kinds.
 func Kinds() []problem.Kind {
 	return []problem.Kind{
-		{Err: repox.ErrNotFound, Code: codes.NotFound, Reason: ReasonNotFound},
-		{Err: repox.ErrAlreadyExists, Code: codes.AlreadyExists, Reason: ReasonAlreadyExists},
-		{Err: repox.ErrConflict, Code: codes.Aborted, Reason: ReasonConcurrentModification},
-		{Err: repox.ErrInvalidArgument, Code: codes.InvalidArgument, Reason: ReasonInvalidArgument},
+		{Err: {{ .Repox }}ErrNotFound, Code: codes.NotFound, Reason: ReasonNotFound},
+		{Err: {{ .Repox }}ErrAlreadyExists, Code: codes.AlreadyExists, Reason: ReasonAlreadyExists},
+		{Err: {{ .Repox }}ErrConflict, Code: codes.Aborted, Reason: ReasonConcurrentModification},
+		{Err: {{ .Repox }}ErrInvalidArgument, Code: codes.InvalidArgument, Reason: ReasonInvalidArgument},
 		{Err: ErrFailedPrecondition, Code: codes.FailedPrecondition, Reason: ReasonInvalidState},
 		{Err: context.Canceled, Code: codes.Canceled, Reason: "CANCELLED"},
 		{Err: context.DeadlineExceeded, Code: codes.DeadlineExceeded, Reason: "DEADLINE_EXCEEDED"},
@@ -108,6 +133,7 @@ func Reasons() []problem.Reason {
 	}
 }
 
+{{ if .Store -}}
 // NewTranslator is the problem.Translator the generated servers use when
 // given none: kinds first (a consumer's own sentinels), then Kinds(), with
 // Reasons() declared and the repositories' reference errors rendered in the
@@ -143,7 +169,7 @@ func ReferenceStatus(err error) (error, bool) {
 		}
 	}
 	st := status.New(codes.FailedPrecondition, msg)
-	details := []protoadapt.MessageV1{&errdetails.ErrorInfo{Reason: reason, Domain: repox.ErrorDomain, Metadata: metadata}}
+	details := []protoadapt.MessageV1{&errdetails.ErrorInfo{Reason: reason, Domain: {{ .Repox }}ErrorDomain, Metadata: metadata}}
 	if e.Name != "" {
 		details = append(details, &errdetails.PreconditionFailure{Violations: []*errdetails.PreconditionFailure_Violation{
 			{Type: reason, Subject: e.Name, Description: msg},
@@ -154,7 +180,15 @@ func ReferenceStatus(err error) (error, bool) {
 	}
 	return st.Err(), true
 }
-
+{{ else -}}
+// NewTranslator is the problem.Translator the generated servers use when
+// given none: kinds first (a consumer's own sentinels), then Kinds(), with
+// Reasons() declared.
+func NewTranslator(domain string, kinds ...problem.Kind) *problem.Translator {
+	return problem.New(domain, append(kinds, Kinds()...)...).
+		Declare(Reasons()...)
+}
+{{ end }}
 // Options configure a generated server. New<Service>Server fills the
 // translator from the proto's domain unless an Option replaces it.
 type Options struct {
@@ -208,12 +242,12 @@ func (o Options) Status(err error) error {
 
 // BadField is an INVALID_ARGUMENT naming the request field at fault.
 func BadField(reason, field, what, fix string) *problem.Problem {
-	return &problem.Problem{Kind: repox.ErrInvalidArgument, Reason: reason, Field: field, What: what, Fix: fix}
+	return &problem.Problem{Kind: {{ .Repox }}ErrInvalidArgument, Reason: reason, Field: field, What: what, Fix: fix}
 }
 
 // Missing is a NOT_FOUND naming the resource that does not exist.
 func Missing(reason, resourceType, name, what, fix string) *problem.Problem {
-	return &problem.Problem{Kind: repox.ErrNotFound, Reason: reason, ResourceType: resourceType, ResourceName: name, What: what, Fix: fix}
+	return &problem.Problem{Kind: {{ .Repox }}ErrNotFound, Reason: reason, ResourceType: resourceType, ResourceName: name, What: what, Fix: fix}
 }
 
 // Blocked is a FAILED_PRECONDITION: the state of the named resource forbids
@@ -225,7 +259,7 @@ func Blocked(reason, resourceType, name, what, fix string) *problem.Problem {
 // NotFoundAs restates a repository ErrNotFound as a NOT_FOUND naming the
 // resource; any other error is returned as it is.
 func NotFoundAs(err error, resourceType, name string) error {
-	if err == nil || !errors.Is(err, repox.ErrNotFound) {
+	if err == nil || !errors.Is(err, {{ .Repox }}ErrNotFound) {
 		return err
 	}
 	var p *problem.Problem
@@ -240,14 +274,14 @@ func NotFoundAs(err error, resourceType, name string) error {
 // AlreadyExistsAs restates a repository ErrAlreadyExists as an ALREADY_EXISTS
 // naming the resource; any other error is returned as it is.
 func AlreadyExistsAs(err error, resourceType, name, fix string) error {
-	if err == nil || !errors.Is(err, repox.ErrAlreadyExists) {
+	if err == nil || !errors.Is(err, {{ .Repox }}ErrAlreadyExists) {
 		return err
 	}
 	var p *problem.Problem
 	if errors.As(err, &p) {
 		return err
 	}
-	return &problem.Problem{Kind: repox.ErrAlreadyExists, Reason: ReasonAlreadyExists, ResourceType: resourceType, ResourceName: name,
+	return &problem.Problem{Kind: {{ .Repox }}ErrAlreadyExists, Reason: ReasonAlreadyExists, ResourceType: resourceType, ResourceName: name,
 		What: fmt.Sprintf("%s already exists", quoteName(name)), Fix: fix}
 }
 
@@ -260,7 +294,7 @@ func quoteName(name string) string {
 
 // IsNotFound reports a missing resource, as a repository sentinel or a status.
 func IsNotFound(err error) bool {
-	return errors.Is(err, repox.ErrNotFound) || status.Code(err) == codes.NotFound
+	return errors.Is(err, {{ .Repox }}ErrNotFound) || status.Code(err) == codes.NotFound
 }
 
 // resourceID is AIP-122's rule for a caller-chosen id: lower-case letters,
@@ -456,7 +490,7 @@ func CheckEtag(resourceType, name, want, have string) error {
 	if want == "" || want == have {
 		return nil
 	}
-	return &problem.Problem{Kind: repox.ErrConflict, Reason: ReasonConcurrentModification, ResourceType: resourceType, ResourceName: name,
+	return &problem.Problem{Kind: {{ .Repox }}ErrConflict, Reason: ReasonConcurrentModification, ResourceType: resourceType, ResourceName: name,
 		What: fmt.Sprintf("the etag sent is not the current etag of %q", name),
 		Fix:  "Read it again, reapply the change and retry with the etag it returns"}
 }

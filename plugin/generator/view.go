@@ -24,7 +24,8 @@ import (
 )
 
 var funcs = template.FuncMap{
-	"quote": strconv.Quote,
+	"quote":      strconv.Quote,
+	"lowerFirst": naming.CamelFirst,
 	"dict": func(kv ...any) map[string]any {
 		m := make(map[string]any, len(kv)/2)
 		for i := 0; i+1 < len(kv); i += 2 {
@@ -137,6 +138,16 @@ type serviceView struct {
 	// through Options().Run: unary and streaming alike.
 	Logic  []logicView
 	EmptyQ string // emptypb qualifier
+	// Handlers are every method's handler, in proto order: the handler
+	// model's <S>Handlers fields.
+	Handlers []handlerView
+}
+
+// handlerView is one field of the handler model's <S>Handlers.
+type handlerView struct {
+	GoName string
+	Sig    string // the function type
+	Kind   string
 }
 
 // logicView is one custom method.
@@ -176,6 +187,9 @@ type resourceView struct {
 	OutputOnly  string
 	Immutable   string
 	HasImmut    bool
+	// SoftDelete is AIP-164's delete_time: the handler model reads it to
+	// tell a deleted record.
+	SoftDelete bool
 	// Remove is the repository call that removes a record for good: Purge
 	// for a soft-deletable resource, Delete for any other.
 	Remove string
@@ -199,6 +213,16 @@ type methodView struct {
 	Items, Next                                                                                     string
 	ReturnsEmpty                                                                                    bool
 	HasCreate                                                                                       bool // the service also creates this resource (allow_missing)
+	// The handler model's setters: the Go names of the body and update_mask
+	// fields, and Get, the service's Get of the resource it reads the stored
+	// record with (nil when the service has none).
+	BodyGo, MaskGo string
+	Get            *getView
+}
+
+// getView is the Get a handler-model method reads the stored record with.
+type getView struct {
+	GoName, Req, NameGo string
 }
 
 func goList(xs []string) string {
@@ -221,7 +245,7 @@ func getter(f *protogen.Field) string {
 
 func snake(s string) string { return naming.SnakeCase(s) }
 
-func serviceFileView(pkg *spec.Package, svc *spec.Service, servicex, _ string) (*serverFile, error) {
+func serviceFileView(pkg *spec.Package, svc *spec.Service, servicex string, store bool) (*serverFile, error) {
 	im := newImports()
 	im.std("context")
 	im.use(servicex, "servicex")
@@ -237,7 +261,6 @@ func serviceFileView(pkg *spec.Package, svc *spec.Service, servicex, _ string) (
 			GoName:       r.Message.GoIdent.GoName,
 			PB:           im.qualify(r.Message),
 			Field:        naming.PascalGo(naming.Pluralize(naming.SnakeCase(r.Message.GoIdent.GoName))),
-			Repo:         im.use(r.Repository.Path, r.Repository.Name) + "." + r.RepoInterface,
 			Type:         r.Type,
 			Singular:     r.Singular,
 			Var:          naming.CamelFirst(svc.GoName) + r.Message.GoIdent.GoName,
@@ -250,6 +273,7 @@ func serviceFileView(pkg *spec.Package, svc *spec.Service, servicex, _ string) (
 			OutputOnly:   goList(r.OutputOnly),
 			Immutable:    goList(r.Immutable),
 			HasImmut:     len(r.Immutable) > 0,
+			SoftDelete:   r.SoftDelete,
 			Remove:       map[bool]string{true: "Purge", false: "Delete"}[r.SoftDelete],
 			HookCreate:   svc.Has(r, spec.Create),
 			HookUpdate:   svc.Has(r, spec.Update),
@@ -265,6 +289,9 @@ func serviceFileView(pkg *spec.Package, svc *spec.Service, servicex, _ string) (
 				}
 			}
 		}
+		if store {
+			x.Repo = im.use(r.Repository.Path, r.Repository.Name) + "." + r.RepoInterface
+		}
 		rv[r] = x
 		v.Resources = append(v.Resources, x)
 		v.Hooks = append(v.Hooks, hooks(x, im)...)
@@ -277,6 +304,7 @@ func serviceFileView(pkg *spec.Package, svc *spec.Service, servicex, _ string) (
 				im.use("google.golang.org/grpc", "grpc")
 			}
 			v.Logic = append(v.Logic, lv)
+			v.Handlers = append(v.Handlers, handlerView{GoName: lv.GoName, Kind: "Custom", Sig: handlerSig(lv)})
 			continue
 		}
 		r := rv[m.Resource]
@@ -314,15 +342,34 @@ func serviceFileView(pkg *spec.Package, svc *spec.Service, servicex, _ string) (
 		if m.Items != nil {
 			mv.Items, mv.Next = m.Items.GoName, m.NextPageToken.GoName
 		}
-		if m.Kind == spec.List || (m.Kind == spec.Delete || m.Kind == spec.Undelete) && m.Etag != nil && m.Resource.HasEtag {
+		if m.Body != nil {
+			mv.BodyGo = m.Body.GoName
+		}
+		if m.UpdateMask != nil {
+			mv.MaskGo = m.UpdateMask.GoName
+		}
+		for _, g := range svc.Methods {
+			if g.Kind == spec.Get && g.Resource == m.Resource && m.Kind != spec.Get {
+				mv.Get = &getView{GoName: g.Proto.GoName, Req: im.qualify(g.Proto.Input), NameGo: g.Name.GoName}
+			}
+		}
+		if store && (m.Kind == spec.List || (m.Kind == spec.Delete || m.Kind == spec.Undelete) && m.Etag != nil && m.Resource.HasEtag) {
 			im.use(repoxOf(m.Resource), "repox")
 		}
 		if m.ReturnsEmpty {
 			v.EmptyQ = im.use("google.golang.org/protobuf/types/known/emptypb", "emptypb")
 		}
-		if m.Kind == spec.Create || (m.Kind == spec.Update && (m.AllowMissing != nil || m.ValidateOnly != nil)) {
+		if store && (m.Kind == spec.Create || (m.Kind == spec.Update && (m.AllowMissing != nil || m.ValidateOnly != nil))) {
 			im.use("google.golang.org/protobuf/proto", "proto")
 		}
+		if !store && (m.Kind == spec.Create || m.Kind == spec.Update || m.Kind == spec.Undelete && mv.Get != nil) {
+			im.use("google.golang.org/protobuf/proto", "proto")
+		}
+		resp := mv.Resp
+		if m.ReturnsEmpty {
+			resp = v.EmptyQ + ".Empty"
+		}
+		v.Handlers = append(v.Handlers, handlerView{GoName: mv.GoName, Kind: mv.Kind, Sig: handlerSig(logicView{Req: mv.Req, Resp: resp})})
 		v.Methods = append(v.Methods, mv)
 	}
 	lines, err := im.lines(pkg.Dir + "/" + snake(svc.GoName) + ".svc.go")
@@ -330,6 +377,20 @@ func serviceFileView(pkg *spec.Package, svc *spec.Service, servicex, _ string) (
 		return nil, err
 	}
 	return &serverFile{Package: pkg.GoPackage, Imports: lines, S: v}, nil
+}
+
+// handlerSig is the function type of a handler-model handler: the gRPC
+// method's own signature.
+func handlerSig(l logicView) string {
+	switch l.Stream {
+	case "server":
+		return fmt.Sprintf("func(req *%s, stream grpc.ServerStreamingServer[%s]) error", l.Req, l.Resp)
+	case "client":
+		return fmt.Sprintf("func(stream grpc.ClientStreamingServer[%s, %s]) error", l.Req, l.Resp)
+	case "bidi":
+		return fmt.Sprintf("func(stream grpc.BidiStreamingServer[%s, %s]) error", l.Req, l.Resp)
+	}
+	return fmt.Sprintf("func(ctx context.Context, req *%s) (*%s, error)", l.Req, l.Resp)
 }
 
 // hooks are the hook methods r's generated methods call, in a stable order.
@@ -389,16 +450,17 @@ type registerService struct {
 
 func registerFileView(pkg *spec.Package) (*registerFile, error) {
 	im := newImports()
-	im.std("context")
 	im.use("github.com/the-protobuf-project/runtime-go/grpc", "grpc")
 	f := &registerFile{Package: pkg.GoPackage}
 	for _, s := range pkg.Services {
 		rs := registerService{GoName: s.GoName, Grpc: im.use(s.Grpc.Path, s.Grpc.Name), Standard: s.Standard()}
 		if s.Gateway != nil {
 			rs.Gateway = im.use(s.Gateway.Path, s.Gateway.Name)
+			im.std("context")
 		}
 		if s.MCP != nil {
 			rs.MCP = im.use(s.MCP.Path, s.MCP.Name)
+			im.std("context")
 		}
 		f.Services = append(f.Services, rs)
 	}

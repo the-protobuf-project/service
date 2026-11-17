@@ -78,6 +78,9 @@ type appService struct {
 	Logic     []string // its Logic methods, for the startup check's message
 	Repos     string   // the <S>Repositories literal
 	Domain    string
+	// Cached is a service with a list-cached resource (cache=true): the
+	// assembly wraps its repositories with Cached<S>Repositories.
+	Cached bool
 }
 
 // appPackage is one generated package, registered through its RegisterAll.
@@ -402,6 +405,11 @@ func appFileView(model *spec.Model, s Settings) (*appView, error) {
 				fields = append(fields, naming.PascalGo(naming.Pluralize(naming.SnakeCase(r.Message.GoIdent.GoName)))+": "+repoExpr(r))
 			}
 			as.Repos = pkg.GoPackage + "." + svc.GoName + "Repositories{" + strings.Join(fields, ", ") + "}"
+			if s.Cache {
+				for _, c := range cachedServices(pkg) {
+					as.Cached = as.Cached || c == svc
+				}
+			}
 			if v.Domain == "" {
 				v.Domain, v.EventSource = svc.Domain, svc.EventSource
 			}

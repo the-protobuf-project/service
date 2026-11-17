@@ -35,6 +35,7 @@ const (
 	goModule         = "example.com/gen/service"
 	repositoryModule = "example.com/gen/repository"
 	messagesModule   = "example.com/test/gen"
+	cacheModule      = "example.com/gen/cache"
 )
 
 var testSettings = generator.Settings{
@@ -53,7 +54,35 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func casePlugin(string) protokit.Plugin { return generator.Plugin(testSettings, nil, testVersions) }
+// casePlugin is the plugin a case runs: the handler model, or with the case's
+// "opts" file (store=true, cache=true, cache_module=...) the settings it
+// names. The cases built from the examples are store=true, as the examples
+// are.
+func casePlugin(dir string) protokit.Plugin {
+	return generator.Plugin(caseSettings(dir), nil, testVersions)
+}
+
+func caseSettings(dir string) generator.Settings {
+	s := testSettings
+	b, err := os.ReadFile(filepath.Join(dir, "opts"))
+	if err != nil {
+		return s
+	}
+	for _, kv := range strings.Split(strings.TrimSpace(string(b)), ",") {
+		k, v, _ := strings.Cut(strings.TrimSpace(kv), "=")
+		switch k {
+		case "store":
+			s.Store = v == "true"
+		case "cache":
+			s.Cache = v == "true"
+		case "cache_module":
+			s.CacheModule = v
+		case "app":
+			s.App = v
+		}
+	}
+	return s
+}
 
 func TestGolden(t *testing.T) {
 	for _, dir := range cases(t) {
@@ -88,7 +117,7 @@ func TestIRAgreement(t *testing.T) {
 // protobuf, and the standard library.
 func TestGeneratedOutputImports(t *testing.T) {
 	allowed := []string{
-		goModule + "/", repositoryModule + "/", messagesModule,
+		goModule + "/", repositoryModule + "/", messagesModule, cacheModule + "/",
 		"github.com/the-protobuf-project/runtime-go/",
 		"google.golang.org/grpc/", "google.golang.org/protobuf/", "google.golang.org/genproto/googleapis/rpc/",
 	}

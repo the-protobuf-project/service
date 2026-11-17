@@ -1,0 +1,140 @@
+syntax = "proto3";
+
+// A testdata-only case for cache=true: a shop cached one record at a time
+// and by List page ((cache.v1.cache).list), and its products, not cached.
+// cache.svc.go wires the list cache and leaves the record cache to the
+// application.
+package catalog.v1;
+
+import "cache/v1/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+
+option go_package = "example.com/catalog/v1;catalogv1";
+
+// Shops serves shops.
+service Shops {
+  // Gets a shop.
+  rpc GetShop(GetShopRequest) returns (Shop);
+  // Lists shops.
+  rpc ListShops(ListShopsRequest) returns (ListShopsResponse);
+  // Creates a shop.
+  rpc CreateShop(CreateShopRequest) returns (Shop);
+  // Updates a shop.
+  rpc UpdateShop(UpdateShopRequest) returns (Shop);
+  // Deletes a shop.
+  rpc DeleteShop(DeleteShopRequest) returns (google.protobuf.Empty);
+}
+
+// Products serves products.
+service Products {
+  // Gets a product.
+  rpc GetProduct(GetProductRequest) returns (Product);
+  // Lists products.
+  rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+}
+
+// A shop.
+message Shop {
+  option (google.api.resource) = {
+    type: "catalog.example/Shop"
+    pattern: "shops/{shop}"
+  };
+  option (cache.v1.cache) = {
+    enabled: true
+    ttl: {seconds: 60}
+    list: {enabled: true, ttl: {seconds: 30}}
+  };
+  // The resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // The display name.
+  string display_name = 2 [(google.api.field_behavior) = REQUIRED];
+  // The concurrency token.
+  string etag = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A product of a shop.
+message Product {
+  option (google.api.resource) = {
+    type: "catalog.example/Product"
+    pattern: "shops/{shop}/products/{product}"
+  };
+  // The resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // The title.
+  string title = 2;
+}
+
+// GetShopRequest names a shop.
+message GetShopRequest {
+  // The shop.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// ListShopsRequest pages shops.
+message ListShopsRequest {
+  // The page size.
+  int32 page_size = 1;
+  // The page token.
+  string page_token = 2;
+}
+
+// ListShopsResponse is a page of shops.
+message ListShopsResponse {
+  // The shops.
+  repeated Shop shops = 1;
+  // The next page.
+  string next_page_token = 2;
+}
+
+// CreateShopRequest creates a shop.
+message CreateShopRequest {
+  // The id.
+  string shop_id = 1;
+  // The shop.
+  Shop shop = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// UpdateShopRequest updates a shop.
+message UpdateShopRequest {
+  // The shop.
+  Shop shop = 1 [(google.api.field_behavior) = REQUIRED];
+  // The fields to update.
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+// DeleteShopRequest deletes a shop.
+message DeleteShopRequest {
+  // The shop.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // The etag.
+  string etag = 2;
+}
+
+// GetProductRequest names a product.
+message GetProductRequest {
+  // The product.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// ListProductsRequest pages a shop's products.
+message ListProductsRequest {
+  // The shop.
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+  // The page size.
+  int32 page_size = 2;
+  // The page token.
+  string page_token = 3;
+  // The filter.
+  string filter = 4;
+}
+
+// ListProductsResponse is a page of products.
+message ListProductsResponse {
+  // The products.
+  repeated Product products = 1;
+  // The next page.
+  string next_page_token = 2;
+}

@@ -73,15 +73,21 @@ func (t *Target) renderApp(p *protogen.Plugin, model *spec.Model) error {
 		sources = append(sources, pkgSources(pkg)...)
 	}
 
-	if err := t.emit(p, "app/mod.rs", sources, "Application shell of "+name+": the servers assembled from their handlers, on the hybrid server.", t.appModule(name, services)); err != nil {
+	module := t.appModule(name, services)
+	config, release, dev := appConfig(name), appRelease(name), appDev(name)
+	if t.Settings.Store {
+		module = t.appStore(module, services)
+		config, release, dev = t.storeConfig(name, config, release, dev)
+	}
+	if err := t.emit(p, "app/mod.rs", sources, "Application shell of "+name+": the servers assembled from their handlers, on the hybrid server.", module); err != nil {
 		return err
 	}
-	if err := t.emit(p, "app/config.rs", sources, "Application shell of "+name+": the typed configuration and its loader.", appConfig(name)); err != nil {
+	if err := t.emit(p, "app/config.rs", sources, "Application shell of "+name+": the typed configuration and its loader.", config); err != nil {
 		return err
 	}
 	for _, f := range []struct{ file, note, body string }{
-		{name + ".release.toml", "the release defaults, embedded in the binary", appRelease(name)},
-		{name + ".dev.toml", "the development profile", appDev(name)},
+		{name + ".release.toml", "the release defaults, embedded in the binary", release},
+		{name + ".dev.toml", "the development profile", dev},
 	} {
 		banner := strings.ReplaceAll(t.banner(p, sources, "Application shell of "+name+": "+f.note+"."), "//", "#")
 		if _, err := p.NewGeneratedFile(path.Join("app", f.file), "").Write([]byte(banner + "\n\n" + f.body)); err != nil {
