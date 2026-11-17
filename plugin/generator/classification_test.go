@@ -29,7 +29,7 @@ func TestCustomListNameStaysCustom(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := protokit.RunPlugin(p, protokit.Options{Target: generator.TargetName}, casePlugin("")); err != nil {
+	if err := protokit.RunPlugin(p, protokit.Options{Target: generator.TargetName}, casePlugin(filepath.Join("testdata", "cases", "directory"))); err != nil {
 		t.Fatal(err)
 	}
 	delegated := false
@@ -63,7 +63,7 @@ func TestAdapterStateTypeRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = protokit.RunPlugin(p, protokit.Options{Target: generator.TargetName}, casePlugin(""))
+	err = protokit.RunPlugin(p, protokit.Options{Target: generator.TargetName}, casePlugin(filepath.Join("testdata", "cases", "webhook")))
 	if err == nil || !strings.Contains(err.Error(), "field state has an incompatible type") {
 		t.Fatalf("got %v", err)
 	}

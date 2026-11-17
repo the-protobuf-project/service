@@ -59,6 +59,9 @@ plugins:
       - go_module=github.com/the-protobuf-project/service/examples/generated/service
       - repository_module=github.com/the-protobuf-project/service/examples/generated/repository
       - config=examples/layout.yaml
+      # Repository-backed servers over the store's repositories above (the
+      # default is the handler model, a handler per RPC).
+      - store=true
       # The application shell: config, telemetry, database, assembly,
       # registration and cmd/acme (examples/generated/service/app).
       - app=acme

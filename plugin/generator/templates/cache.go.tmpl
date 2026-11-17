@@ -1,0 +1,38 @@
+{{ .Banner }}
+
+package {{ .Package }}
+
+import (
+{{- range .Imports }}
+	{{ . }}
+{{- end }}
+)
+{{ range .Services }}
+// Cached{{ .GoName }}Repositories returns repos with the List of every
+// resource whose (cache.v1.cache).list is enabled ({{ range $i, $l := .Lists }}{{ if $i }}, {{ end }}{{ $l.Model }}{{ end }}) served from
+// protoc-gen-cache's list cache on p.
+// observe makes each cache hear every write the repositories commit, so a
+// write moves its parent's pages on: pass database.Connection.Observe, or
+// add each to the repox.Conn's Changes. Every other method is repos'.
+//
+// An error leaves repos as it was given: a list cache is an optimization,
+// and a process may serve without it.
+func Cached{{ .GoName }}Repositories(ctx context.Context, p cache.Provider, observe func(repox.ChangeObserver), repos {{ .GoName }}Repositories) ({{ .GoName }}Repositories, error) {
+	out := repos
+{{- range .Lists }}
+	{
+		db, err := {{ .Pkg }}.Open{{ .Model }}ListCache(ctx, p)
+		if err != nil {
+			return repos, err
+		}
+		c, err := {{ .Pkg }}.New{{ .Model }}ListCache(db)
+		if err != nil {
+			return repos, err
+		}
+		observe(c)
+		out.{{ .Field }} = c.Wrap(out.{{ .Field }})
+	}
+{{- end }}
+	return out, nil
+}
+{{ end }}

@@ -32,9 +32,38 @@ func TestMain(m *testing.M) {
 }
 
 func TestRustExamples(t *testing.T) {
+	checkFixtures(t, []string{"directory", "calendar", "booking", "webhook", "idempotency", "purge", "streaming"},
+		rustgen.Settings{App: "acme"}, filepath.Join("..", "..", "examples", "rust"), true)
+}
+
+// TestRustStoreExamples holds examples/rust-store to store=true and
+// cache=true: the servers over runtime-rs repositories, and the app shell
+// opening the records database (SQLite there) and the cache.
+func TestRustStoreExamples(t *testing.T) {
+	checkFixtures(t, []string{"directory", "calendar", "cache"},
+		rustgen.Settings{App: "acme", Store: true, Cache: true, Database: "sqlite"}, filepath.Join("..", "..", "examples", "rust-store"), true)
+}
+
+func TestRustCacheWithoutStore(t *testing.T) {
+	req := golden.BuildRequest(t, filepath.Join("..", "generator", "testdata", "cases", "cache"))
+	p, err := protogen.Options{}.New(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = protokit.RunPlugin(p, protokit.Options{Target: rustgen.TargetName}, testPlugin(rustgen.Settings{Cache: true}, nil))
+	if err == nil || !strings.Contains(err.Error(), "cache=true requires store=true") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// checkFixtures generates the named cases with settings and compares the
+// output, and the descriptor set, with root's committed fixtures
+// (-update-rust rewrites them).
+func checkFixtures(t *testing.T, names []string, settings rustgen.Settings, root string, descriptor bool) {
+	t.Helper()
 	req := &pluginpb.CodeGeneratorRequest{}
 	seen := map[string]bool{}
-	for _, name := range []string{"directory", "calendar", "booking", "webhook", "idempotency", "purge", "streaming"} {
+	for _, name := range names {
 		dir := filepath.Join("..", "generator", "testdata", "cases", name)
 		if name == "streaming" {
 			dir = filepath.Join("testdata", "streaming")
@@ -52,10 +81,9 @@ func TestRustExamples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = protokit.RunPlugin(p, protokit.Options{Target: rustgen.TargetName}, testPlugin(rustgen.Settings{App: "acme"}, nil)); err != nil {
+	if err = protokit.RunPlugin(p, protokit.Options{Target: rustgen.TargetName}, testPlugin(settings, nil)); err != nil {
 		t.Fatal(err)
 	}
-	root := filepath.Join("..", "..", "examples", "rust")
 	check := func(name string, data []byte) {
 		t.Helper()
 		if *update {
@@ -100,7 +128,9 @@ func TestRustExamples(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-
+	if !descriptor {
+		return
+	}
 	data, err := proto.MarshalOptions{Deterministic: true}.Marshal(&descriptorpb.FileDescriptorSet{File: req.ProtoFile})
 	if err != nil {
 		t.Fatal(err)

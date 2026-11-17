@@ -30,6 +30,7 @@ func TestAppShell(t *testing.T) {
 	}
 	s := testSettings
 	s.App = "acme"
+	s.Store = true
 	if err := protokit.RunPlugin(p, protokit.Options{Target: generator.TargetName}, generator.Plugin(s, nil, testVersions)); err != nil {
 		t.Fatal(err)
 	}
@@ -81,5 +82,64 @@ func TestAppShell(t *testing.T) {
 	}
 	if !strings.Contains(files["app/config/acme.release.toml"], "[retention]") {
 		t.Error("a run with soft-deletable resources has no [retention]")
+	}
+}
+
+// TestFlagRefusals checks the combinations the flags refuse: an app shell
+// over the handler model, cache without store, and cache without the module
+// its wiring imports.
+func TestFlagRefusals(t *testing.T) {
+	for name, tc := range map[string]struct {
+		mutate func(*generator.Settings)
+		want   string
+	}{
+		"app without store":               {func(s *generator.Settings) { s.App = "acme" }, "app=acme needs store=true"},
+		"cache without store":             {func(s *generator.Settings) { s.Cache = true; s.CacheModule = "example.com/gen/cache" }, "cache=true requires store=true"},
+		"cache without module":            {func(s *generator.Settings) { s.Store = true; s.Cache = true }, "cache=true needs the cache_module opt"},
+		"store without repository_module": {func(s *generator.Settings) { s.Store = true; s.RepositoryModule = "" }, "repository_module opt is required"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			req := golden.BuildRequest(t, filepath.Join("testdata", "cases", "directory"))
+			p, err := protogen.Options{}.New(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := testSettings
+			tc.mutate(&s)
+			err = protokit.RunPlugin(p, protokit.Options{Target: generator.TargetName}, generator.Plugin(s, nil, testVersions))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("got %v, want an error containing %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestAppShellCache checks that cache=true has the assembly wrap a
+// list-cached service's repositories, and leaves the others alone.
+func TestAppShellCache(t *testing.T) {
+	req := golden.BuildRequest(t, filepath.Join("testdata", "cases", "cache"))
+	p, err := protogen.Options{}.New(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := testSettings
+	s.App, s.Store, s.Cache, s.CacheModule = "acme", true, true, cacheModule
+	if err := protokit.RunPlugin(p, protokit.Options{Target: generator.TargetName}, generator.Plugin(s, nil, testVersions)); err != nil {
+		t.Fatal(err)
+	}
+	var assembly string
+	for _, f := range p.Response().File {
+		if f.GetName() == "app/server/assembly.go" {
+			assembly = f.GetContent()
+		}
+	}
+	for _, want := range []string{
+		"catalogv1svc.CachedShopsRepositories(context.Background(), cp, d.Conn.Observe, shopsRepos)",
+		"catalogv1svc.NewShopsServer(shopsRepos,",
+		"catalogv1svc.NewProductsServer(catalogv1svc.ProductsRepositories{",
+	} {
+		if !strings.Contains(assembly, want) {
+			t.Errorf("assembly.go lacks %q", want)
+		}
 	}
 }

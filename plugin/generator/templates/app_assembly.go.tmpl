@@ -44,7 +44,19 @@ func New(d *Deps, p Provision) (*Services, error) {
 	r := d.Repos
 	_ = r
 {{- range .Services }}{{ if .Generated }}
+{{- if .Cached }}
+	{{ .GoName | lowerFirst }}Repos := {{ .Repos }}
+	if cp := d.Conn.CacheProvider(); cp != nil {
+		cached, err := {{ .Pkg }}.Cached{{ .GoName }}Repositories(context.Background(), cp, d.Conn.Observe, {{ .GoName | lowerFirst }}Repos)
+		if err != nil {
+			telemetry.Warn("The list cache of {{ .FullName }} is off: it could not be opened", "error", err)
+		}
+		{{ .GoName | lowerFirst }}Repos = cached
+	}
+	s.{{ .Field }} = {{ .Pkg }}.New{{ .GoName }}Server({{ .GoName | lowerFirst }}Repos, {{ if .Hooks }}p.Hooks.{{ .Field }}{{ else }}nil{{ end }}, append(ServerOptions({{ quote .Domain }}), p.ServerOptions...)...)
+{{- else }}
 	s.{{ .Field }} = {{ .Pkg }}.New{{ .GoName }}Server({{ .Repos }}, {{ if .Hooks }}p.Hooks.{{ .Field }}{{ else }}nil{{ end }}, append(ServerOptions({{ quote .Domain }}), p.ServerOptions...)...)
+{{- end }}
 {{- if .Logic }}
 	if p.Logic.{{ .Field }} != nil {
 		s.{{ .Field }}.WithLogic(p.Logic.{{ .Field }})

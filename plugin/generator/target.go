@@ -53,9 +53,28 @@ type Settings struct {
 	ErrorDomain string
 	// App, when set, also renders the application shell of that name (see
 	// app.go): configuration, telemetry, database, assembly, registration
-	// and the command that serves them.
+	// and the command that serves them. It needs Store.
 	App string
+	// Store generates repository-backed servers: each server persists through
+	// protoc-gen-store's generated repositories (<S>Repositories), and the
+	// change feeds, store adapters and application shell are generated over
+	// them. Without it a server runs each standard method's checks and hooks
+	// around a handler per RPC the application registers (<S>Handlers).
+	Store bool
+	// Cache, with Store, also generates the wiring of protoc-gen-cache's list
+	// caches in front of the repositories of every resource whose
+	// (cache.v1.cache).list is enabled (cache.svc.go, and the application
+	// shell's assembly).
+	Cache bool
+	// CacheModule is the import path of protoc-gen-cache's output, for Cache.
+	CacheModule string
 }
+
+// ErrCacheWithoutStore refuses cache=true without store=true, in either
+// language.
+var ErrCacheWithoutStore = fmt.Errorf("service: cache=true requires store=true: the generated cache wiring " +
+	"wraps protoc-gen-store's repositories, which only store=true servers persist through; a handler-model " +
+	"server (the default) reads through whatever its handlers call, so cache there, or add store=true")
 
 // Target is the goservice target.
 type Target struct {
@@ -84,14 +103,26 @@ func (*Target) Generate(*protogen.Plugin, []*schema.Database) error {
 // GenerateIR implements schema.IRTarget.
 func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 	s := t.Settings
+	if s.Cache && !s.Store {
+		return ErrCacheWithoutStore
+	}
+	if s.App != "" && !s.Store {
+		return fmt.Errorf("service: app=%s needs store=true for Go: the Go application shell opens the database and "+
+			"builds every server over protoc-gen-store's repositories; add store=true, or build the handler-model "+
+			"servers (New<S>Server over <S>Handlers) into a process of your own", s.App)
+	}
+	if s.Cache && s.CacheModule == "" {
+		return fmt.Errorf("service: cache=true needs the cache_module opt: the Go import path of protoc-gen-cache's " +
+			"output (e.g. cache_module=github.com/me/gen/cache), whose list caches the generated wiring builds")
+	}
 	if s.GoModule == "" {
 		return fmt.Errorf("service: the go_module opt is required: the Go import path of this plugin's out " +
 			"directory (e.g. go_module=github.com/me/gen/service), which the generated servers import servicex by")
 	}
-	if s.RepositoryModule == "" {
+	if s.Store && s.RepositoryModule == "" {
 		return fmt.Errorf("service: the repository_module opt is required: the Go import path of " +
 			"protoc-gen-store's repository output (its go_module opt, e.g. repository_module=github.com/me/gen/repository); " +
-			"the generated servers persist through the repositories under it")
+			"store=true servers persist through the repositories under it")
 	}
 	if s.PackageSuffix == "" {
 		s.PackageSuffix = "svc"
@@ -118,12 +149,21 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 	runtime := map[string]any{
 		"Banner":      banner(p, t.Versions, nil, "Shared runtime of the generated AIP standard-method servers."),
 		"RepoxImport": path.Join(s.RepositoryModule, "repox"),
+		"Store":       s.Store,
+		"Repox":       map[bool]string{true: "repox.", false: ""}[s.Store],
 	}
 	if err := render(p, "servicex/servicex.go", "servicex.go.tmpl", runtime); err != nil {
 		return err
 	}
-	if err := render(p, "servicex/events.go", "events.go.tmpl", runtime); err != nil {
-		return err
+	if s.Store {
+		if err := render(p, "servicex/events.go", "events.go.tmpl", runtime); err != nil {
+			return err
+		}
+	} else {
+		runtime["Banner"] = banner(p, t.Versions, nil, "Shared runtime of the generated handler-model servers.")
+		if err := render(p, "servicex/handlers.go", "handlers_runtime.go.tmpl", runtime); err != nil {
+			return err
+		}
 	}
 	if err := renderText(p, "servicex/errors.svc.md", "errors.md.tmpl", map[string]any{
 		"Domain": "", "Proto": "servicex", "Reasons": standardReasons,
@@ -137,12 +177,16 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 				// Nothing to generate: the service has no method at all.
 				continue
 			}
-			view, err := serviceFileView(pkg, svc, servicex, s.RepositoryModule)
+			view, err := serviceFileView(pkg, svc, servicex, s.Store)
 			if err != nil {
 				return err
 			}
 			view.Banner = banner(p, t.Versions, []string{svc.Proto.Location.SourceFile}, "AIP standard-method server for "+svc.FullName+".")
-			if err := render(p, path.Join(pkg.Dir, snake(svc.GoName)+".svc.go"), "server.go.tmpl", view); err != nil {
+			tpl := "server.go.tmpl"
+			if !s.Store {
+				tpl = "handlers.go.tmpl"
+			}
+			if err := render(p, path.Join(pkg.Dir, snake(svc.GoName)+".svc.go"), tpl, view); err != nil {
 				return err
 			}
 		}
@@ -158,6 +202,11 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 		}
 		if err := t.extras(p, pkg, servicex, sources); err != nil {
 			return err
+		}
+		if s.Cache {
+			if err := t.renderCache(p, pkg, sources); err != nil {
+				return err
+			}
 		}
 	}
 	if s.App != "" {
@@ -210,6 +259,17 @@ func render(p *protogen.Plugin, name, tpl string, view any) error {
 func (t *Target) extras(p *protogen.Plugin, pkg *spec.Package, servicex string, sources []string) error {
 	if len(sources) == 0 {
 		sources = []string{pkg.ProtoPackage}
+	}
+	if !t.Settings.Store {
+		// Feeds and adapters read and write through protoc-gen-store's
+		// repositories: a handler-model run has none to give them.
+		for _, r := range pkg.Feeds {
+			fmt.Fprintf(os.Stderr, "protoc-gen-service: warning: %s declares (service.v1.event); its change feed is generated with store=true only\n", r.Message.Desc.FullName())
+		}
+		for _, a := range pkg.Adapters {
+			fmt.Fprintf(os.Stderr, "protoc-gen-service: warning: %s declares (service.v1.adapter); its store adapter is generated with store=true only\n", a.Resource.Message.Desc.FullName())
+		}
+		pkg = &spec.Package{ProtoPackage: pkg.ProtoPackage, Dir: pkg.Dir, GoPackage: pkg.GoPackage, Services: pkg.Services, Errors: pkg.Errors}
 	}
 	feeds, err := feedsFileView(pkg, servicex)
 	if err != nil {

@@ -4,3 +4,4 @@ go.work.sum
 
 # Rust compile fixtures and consumer builds.
 examples/rust/target/
+examples/rust-store/target/

@@ -1,0 +1,38 @@
+[package]
+name = "service-rust-store-examples"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# store=true and cache=true: the generated servers persist through runtime-rs's
+# database::repository::Repository, and the app shell opens the records
+# database (SQLite here, rust_database=sqlite) and the cache.
+#
+# runtime-rs is a local path, the runtime-rs-cache-repo worktree (branch
+# feat/cached-repository: feat/repository-impl's RecordsRepository plus
+# database::repository::cached, which protoc-gen-cache's output needs), until
+# both merge; then pin these four to one git rev, as examples/rust pins
+# tpp-config and tpp-grpc, and add this crate to CI's "Generated Rust
+# services" job.
+[dependencies]
+tonic = "0.14"
+tonic-prost = "0.14"
+tonic-types = "0.14"
+prost = "0.14"
+prost-types = "0.14"
+prost-reflect = { version = "0.16", features = ["serde", "derive"] }
+futures-core = "0.3"
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+config = { package = "tpp-config", path = "../../../runtime/runtime-rs-cache-repo/config" }
+grpc = { package = "tpp-grpc", path = "../../../runtime/runtime-rs-cache-repo/grpc", default-features = false, features = ["tls"] }
+database = { package = "tpp-database", path = "../../../runtime/runtime-rs-cache-repo/database", default-features = false, features = ["orm-sqlite", "cached"] }
+cache = { package = "tpp-cache", path = "../../../runtime/runtime-rs-cache-repo/cache" }
+
+[build-dependencies]
+prost = "0.14"
+prost-types = "0.14"
+tonic-prost-build = "0.14"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync", "time"] }

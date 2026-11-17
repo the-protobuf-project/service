@@ -57,6 +57,22 @@ type Settings struct {
 	// App, when set, also renders the application shell of that name under
 	// app/ (see app.go).
 	App string
+	// Store generates repository-backed servers: every standard method's
+	// handler is filled from a per-service struct of runtime-rs
+	// database::repository::Repository (<S>Repositories), and the app shell
+	// opens the records database and builds them (store.go).
+	Store bool
+	// Cache, with Store, has the app shell wrap each package's repositories
+	// with protoc-gen-cache's cache_repositories.
+	Cache bool
+	// RepositoryModule contains protoc-gen-store's lang=rust repositories:
+	// per proto package, Repositories and repositories(db, pool), and, for a
+	// package with cache.v1 annotations, protoc-gen-cache's cache module
+	// (cache::cache_repositories) beside them.
+	RepositoryModule string
+	// Database is the SQL dialect the app shell opens with Store: postgres,
+	// mysql or sqlite.
+	Database string
 }
 type Target struct {
 	Settings Settings
@@ -78,7 +94,19 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 	if t.Settings.ServiceModule == "" {
 		t.Settings.ServiceModule = "crate::service"
 	}
-	for _, v := range []string{t.Settings.ProtoModule, t.Settings.ServiceModule} {
+	if t.Settings.RepositoryModule == "" {
+		t.Settings.RepositoryModule = "crate::repository"
+	}
+	if t.Settings.Database == "" {
+		t.Settings.Database = "postgres"
+	}
+	if t.Settings.Cache && !t.Settings.Store {
+		return generator.ErrCacheWithoutStore
+	}
+	if t.Settings.Store && sqlxPool[t.Settings.Database] == "" {
+		return fmt.Errorf("service: rust_database=%s: want postgres, mysql or sqlite", t.Settings.Database)
+	}
+	for _, v := range []string{t.Settings.ProtoModule, t.Settings.ServiceModule, t.Settings.RepositoryModule} {
 		if !validModule(v) {
 			return fmt.Errorf("service: invalid Rust module path %q", v)
 		}
@@ -93,16 +121,25 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 	if len(model.Packages) == 0 {
 		return nil
 	}
-	for _, file := range []struct{ template, output, note string }{
+	runtime := []struct{ template, output, note string }{
 		{"servicex.rs", "servicex/mod.rs", "Shared runtime of the generated AIP standard-method servers."},
 		{"feeds.rs", "servicex/feeds.rs", "Shared change-feed runtime."},
 		{"adapters.rs", "servicex/adapters.rs", "Shared event and idempotency record adapters."},
-	} {
+	}
+	if t.Settings.Store {
+		runtime = append(runtime, struct{ template, output, note string }{"store.rs", "servicex/store.rs", "The standard methods' handlers over runtime-rs repositories (store=true)."})
+	}
+	for _, file := range runtime {
 		data, err := templates.ReadFile("templates/" + file.template)
 		if err != nil {
 			return err
 		}
-		if err := t.emit(p, file.output, nil, file.note, string(data)); err != nil {
+		body := string(data)
+		if file.template == "servicex.rs" && t.Settings.Store {
+			body = strings.Replace(body, "mod feeds;\n", "mod feeds;\nmod store;\n", 1)
+			body = strings.Replace(body, "pub use feeds::*;\n", "pub use feeds::*;\npub use store::*;\n", 1)
+		}
+		if err := t.emit(p, file.output, nil, file.note, body); err != nil {
 			return err
 		}
 	}

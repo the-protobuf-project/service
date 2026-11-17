@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/the-protobuf-project/protokit/naming"
+
 	"github.com/the-protobuf-project/service/plugin/spec"
 )
 
@@ -75,6 +77,9 @@ func (t *Target) service(b *strings.Builder, s *spec.Service) error {
 		b.WriteString("Ok(tonic::Response::new(out))\n}\n\n")
 	}
 	b.WriteString("}\n")
+	if t.Settings.Store && s.Standard() {
+		t.repositories(b, s)
+	}
 	return nil
 }
 
@@ -165,4 +170,113 @@ func (t *Target) standard(b *strings.Builder, s *spec.Service, m *spec.Method) {
 	case spec.Undelete:
 		fmt.Fprintf(b, "let name = req.%s.clone();\nlet existing = %s;\nlet preview = call.undelete(&name, %s, existing).await?;\nif %s {\nreturn Ok(tonic::Response::new(preview.unwrap_or_default()));\n}\nlet out = %s;\n", field(m.Name), existing("name.clone()"), borrowed(m.Etag), dry, run)
 	}
+}
+
+// repoField is r's field in <S>Repositories, and in protoc-gen-store's
+// per-package Repositories: its plural, snake-cased ("organizational_units").
+func repoField(r *spec.Resource) string {
+	return ident(naming.Pluralize(naming.SnakeCase(r.Message.GoIdent.GoName)))
+}
+
+// repositories renders store=true's <S>Repositories and the handlers over
+// them: every standard method answered by a runtime-rs repository, with the
+// semantics of the Go repository-backed servers.
+func (t *Target) repositories(b *strings.Builder, s *spec.Service) {
+	repos := s.GoName + "Repositories"
+	fmt.Fprintf(b, "\n/// The repositories %sServer persists through with store=true, one per\n/// resource: protoc-gen-store's (`database::repository::Repository`), or a cache\n/// decorator in front of one. The twin of the Go server's %s.\n#[derive(Clone)]\npub struct %s {\n", s.GoName, repos, repos)
+	for _, r := range s.Resources {
+		fmt.Fprintf(b, "/// %s.\npub %s: servicex::Repo<%s>,\n", r.Message.GoIdent.GoName, repoField(r), t.typ(r.Message))
+	}
+	fmt.Fprintf(b, "}\n\nimpl %sHandlers {\n/// Answers every standard method from repos; the custom methods stay yours to\n/// register. The server's checks and hooks run around these as around any handler:\n/// the repository mints ids and etags, guards a write with the etag it carries,\n/// soft-deletes, and pages, filters and orders a List.\npub fn with_repositories(mut self, repos: &%s) -> Self {\n", s.GoName, repos)
+	for _, m := range s.Methods {
+		if m.Kind == spec.Custom {
+			continue
+		}
+		r := m.Resource
+		in, _ := t.signature(m)
+		typ := q(r.Type)
+		mn := ident(m.Proto.GoName)
+		var body string
+		switch m.Kind {
+		case spec.Get:
+			body = fmt.Sprintf("let name = req.%s;\nrepo.get(&name).await.map_err(|e| servicex::store_status(e, %s, &name))", field(m.Name), typ)
+		case spec.List:
+			parent := `""`
+			if m.Parent != nil {
+				parent = borrowed(m.Parent)
+			}
+			filter := `""`
+			if m.Filter != nil {
+				filter = borrowed(m.Filter)
+			}
+			orderBy := "String::new()"
+			if m.OrderBy != nil {
+				orderBy = "String::from(" + borrowed(m.OrderBy) + ")"
+			}
+			token := "String::new()"
+			if m.PageToken != nil {
+				token = "String::from(" + borrowed(m.PageToken) + ")"
+			}
+			rest := ""
+			if len(m.Proto.Output.Fields) > 2 {
+				rest = "\n..Default::default()"
+			}
+			body = fmt.Sprintf("let input = ::database::repository::ListInput {\npage_size: %s,\npage_token: %s,\norder_by: %s,\nfilter: String::from(%s),\nshow_deleted: %s,\nparent: String::from(%s),\n};\nlet page = repo.list(&input).await.map_err(|e| servicex::store_status(e, %s, \"\"))?;\nOk(%s {\n%s: page.items,\n%s: page.next_page_token,%s\n})",
+				scalar(m.PageSize, "0"), token, orderBy, filter, scalar(m.ShowDeleted, "false"), parent, typ,
+				t.typ(m.Proto.Output), field(m.Items), field(m.NextPageToken), rest)
+		case spec.Create:
+			parent := `""`
+			if m.Parent != nil {
+				parent = borrowed(m.Parent)
+			}
+			// No id chosen: the repository mints one (a ULID, as Go's
+			// repox does), under the parent when the name ends in
+			// "<collection>/".
+			mint := ""
+			if m.Parent != nil {
+				mint = fmt.Sprintf("if value.name.is_empty() {\nvalue.name = format!(\"{}/%s/\", %s);\n}\n", r.Collection(), strings.TrimPrefix(parent, "&"))
+			}
+			binding := "let value"
+			if mint != "" {
+				binding = "let mut value"
+			}
+			body = fmt.Sprintf("%s = req.%s.clone().unwrap_or_default();\n%srepo.create(&value).await.map_err(|e| servicex::store_status(e, %s, &value.name))", binding, field(m.Body), mint, typ)
+		case spec.Update:
+			mask := "Vec::new()"
+			if m.UpdateMask != nil {
+				mask = "servicex::store_paths(req." + field(m.UpdateMask) + ")"
+			}
+			write := "repo.update(&value, &paths).await"
+			if m.AllowMissing != nil {
+				// The server decided allow_missing's create; the update
+				// finding nothing is that case.
+				write = "match repo.update(&value, &paths).await {\nErr(::database::Error::NotFound) if allow_missing => repo.create(&value).await,\nresult => result,\n}"
+				body = "let allow_missing = " + scalar(m.AllowMissing, "false") + ";\n"
+			}
+			body += fmt.Sprintf("let value = req.%s.unwrap_or_default();\nlet paths = %s;\n%s.map_err(|e| servicex::store_status(e, %s, &value.name))", field(m.Body), mask, write, typ)
+		case spec.Delete:
+			etag := `""`
+			if m.Etag != nil {
+				etag = borrowed(m.Etag)
+			}
+			body = fmt.Sprintf("let name = req.%s.clone();\nrepo.delete(&name, servicex::if_match(%s)).await.map_err(|e| servicex::store_status(e, %s, &name))?;\n", field(m.Name), etag, typ)
+			if m.ReturnsEmpty {
+				body += "Ok(())"
+			} else {
+				// The deleted record, as a soft delete keeps it; a hard
+				// delete leaves only its name.
+				body += fmt.Sprintf("match repo.get(&name).await {\nOk(value) => Ok(value),\nErr(::database::Error::NotFound) => Ok(%s { name, ..Default::default() }),\nErr(e) => Err(servicex::store_status(e, %s, &name)),\n}", t.typ(r.Message), typ)
+			}
+		case spec.Undelete:
+			etag := `""`
+			if m.Etag != nil {
+				etag = borrowed(m.Etag)
+			}
+			body = fmt.Sprintf("let name = req.%s.clone();\nrepo.undelete(&name, servicex::if_match(%s)).await.map_err(|e| servicex::store_status(e, %s, &name))", field(m.Name), etag, typ)
+		case spec.Purge:
+			body = fmt.Sprintf("let name = req.%s;\nrepo.purge(&name).await.map_err(|e| servicex::store_status(e, %s, &name))", field(m.Name), typ)
+		}
+		fmt.Fprintf(b, "{\nlet repo = repos.%s.clone();\nself.%s = Some(servicex::Handler::new(move |_ctx, req: %s| {\nlet repo = repo.clone();\nasync move {\n%s\n}\n}));\n}\n", repoField(r), mn, in, body)
+	}
+	b.WriteString("self\n}\n}\n")
 }
