@@ -8,8 +8,9 @@ publish = false
 # database::repository::Repository, and the app shell opens the records
 # database (SQLite here, rust_database=sqlite) and the cache.
 #
-# runtime-rs at the merge of runtime-rs#49 (RecordsRepository and
-# database::repository::cached, which protoc-gen-cache's output needs).
+# runtime-rs at main, as every consumer uses it (Cargo.lock records the commit):
+# RecordsRepository and database::repository::cached, which protoc-gen-cache's
+# output needs, landed in runtime-rs#49.
 [dependencies]
 tonic = "0.14"
 tonic-prost = "0.14"
@@ -20,10 +21,10 @@ prost-reflect = { version = "0.16", features = ["serde", "derive"] }
 futures-core = "0.3"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
-config = { package = "tpp-config", git = "https://github.com/the-protobuf-project/runtime-rs", rev = "53f2ffbfefc2caa2c02ba4d62637ede614103b17" }
-grpc = { package = "tpp-grpc", git = "https://github.com/the-protobuf-project/runtime-rs", rev = "53f2ffbfefc2caa2c02ba4d62637ede614103b17", default-features = false, features = ["tls"] }
-database = { package = "tpp-database", git = "https://github.com/the-protobuf-project/runtime-rs", rev = "53f2ffbfefc2caa2c02ba4d62637ede614103b17", default-features = false, features = ["orm-sqlite", "cached"] }
-cache = { package = "tpp-cache", git = "https://github.com/the-protobuf-project/runtime-rs", rev = "53f2ffbfefc2caa2c02ba4d62637ede614103b17" }
+config = { package = "tpp-config", git = "https://github.com/the-protobuf-project/runtime-rs", branch = "main" }
+grpc = { package = "tpp-grpc", git = "https://github.com/the-protobuf-project/runtime-rs", branch = "main", default-features = false, features = ["tls"] }
+database = { package = "tpp-database", git = "https://github.com/the-protobuf-project/runtime-rs", branch = "main", default-features = false, features = ["orm-sqlite", "cached"] }
+cache = { package = "tpp-cache", git = "https://github.com/the-protobuf-project/runtime-rs", branch = "main" }
 
 [build-dependencies]
 prost = "0.14"
