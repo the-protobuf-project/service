@@ -15,10 +15,10 @@ futures-core = "0.3"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 # The application shell (src/generated/app): runtime-rs's configuration loader
-# and hybrid gRPC/REST/MCP server, pinned to the commit that moved validation to
-# protovalidate-rs (runtime-rs#45) until runtime-rs is released.
-config = { package = "tpp-config", git = "https://github.com/the-protobuf-project/runtime-rs", rev = "9a69a7c" }
-grpc = { package = "tpp-grpc", git = "https://github.com/the-protobuf-project/runtime-rs", rev = "9a69a7c", default-features = false, features = ["tls"] }
+# and hybrid gRPC/REST/MCP server, at runtime-rs main, as every consumer uses
+# runtime-rs (Cargo.lock records the commit a build used).
+config = { package = "tpp-config", git = "https://github.com/the-protobuf-project/runtime-rs", branch = "main" }
+grpc = { package = "tpp-grpc", git = "https://github.com/the-protobuf-project/runtime-rs", branch = "main", default-features = false, features = ["tls"] }
 
 [build-dependencies]
 prost = "0.14"
