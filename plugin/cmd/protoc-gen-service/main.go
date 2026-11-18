@@ -81,6 +81,7 @@ func main() {
 	language := flags.String("lang", "go", "output language: go or rust")
 	rustProtoModule := flags.String("rust_proto_module", "crate::pb", "Rust module containing prost/tonic packages")
 	rustServiceModule := flags.String("rust_service_module", "crate::service", "Rust module containing the generated mod.rs")
+	rustServicexModule := flags.String("rust_servicex_module", "grpc::servicex", "Rust module of the servicex runtime the generated services build on (runtime-rs tpp-grpc)")
 	goModule := flags.String("go_module", "", "Go import path of this plugin's out directory (servicex lives under it)")
 	repositoryModule := flags.String("repository_module", "", "Go import path of protoc-gen-store's repository output (its go_module opt)")
 	configPath := flags.String("config", "", "path to service.yaml: the store's datasources layout and per-package bindings")
@@ -111,7 +112,7 @@ func main() {
 		if *language == "rust" {
 			return protokit.RunPlugin(p, protokit.Options{Target: rustgen.TargetName, Strict: *strict, Version: v},
 				rustgen.Plugin(rustgen.Settings{
-					ProtoModule: *rustProtoModule, ServiceModule: *rustServiceModule, ErrorDomain: *domain, App: *app,
+					ProtoModule: *rustProtoModule, ServiceModule: *rustServiceModule, ServicexModule: *rustServicexModule, ErrorDomain: *domain, App: *app,
 					Store: *store, Cache: *cacheFlag, RepositoryModule: *rustRepositoryModule, Database: *rustDatabase,
 				}, cfg, generator.ResolveVersions(v)))
 		}

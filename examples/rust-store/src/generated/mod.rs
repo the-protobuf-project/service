@@ -9,7 +9,7 @@
 //
 // service — https://github.com/the-protobuf-project/service
 
-pub mod servicex;
+pub use grpc::servicex;
 
 pub mod app;
 

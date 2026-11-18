@@ -3120,7 +3120,7 @@ checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 [[package]]
 name = "tpp-agents"
 version = "0.1.0"
-source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#53f2ffbfefc2caa2c02ba4d62637ede614103b17"
+source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#4f874fdd2ae34759c0d57a5bc9f036bf6f387fff"
 dependencies = [
  "async-trait",
  "axum",
@@ -3148,7 +3148,7 @@ dependencies = [
 [[package]]
 name = "tpp-cache"
 version = "0.1.0"
-source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#53f2ffbfefc2caa2c02ba4d62637ede614103b17"
+source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#4f874fdd2ae34759c0d57a5bc9f036bf6f387fff"
 dependencies = [
  "async-trait",
  "bytes",
@@ -3168,7 +3168,7 @@ dependencies = [
 [[package]]
 name = "tpp-config"
 version = "0.1.0"
-source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#53f2ffbfefc2caa2c02ba4d62637ede614103b17"
+source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#4f874fdd2ae34759c0d57a5bc9f036bf6f387fff"
 dependencies = [
  "figment",
  "serde",
@@ -3179,7 +3179,7 @@ dependencies = [
 [[package]]
 name = "tpp-database"
 version = "0.1.0"
-source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#53f2ffbfefc2caa2c02ba4d62637ede614103b17"
+source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#4f874fdd2ae34759c0d57a5bc9f036bf6f387fff"
 dependencies = [
  "arrow-array",
  "arrow-ipc",
@@ -3207,11 +3207,12 @@ dependencies = [
 [[package]]
 name = "tpp-grpc"
 version = "0.1.0"
-source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#53f2ffbfefc2caa2c02ba4d62637ede614103b17"
+source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#4f874fdd2ae34759c0d57a5bc9f036bf6f387fff"
 dependencies = [
  "async-trait",
  "axum",
  "bytes",
+ "futures-core",
  "futures-util",
  "http",
  "http-body",
@@ -3221,6 +3222,7 @@ dependencies = [
  "owo-colors",
  "prost",
  "prost-reflect",
+ "prost-types",
  "protovalidate-rs",
  "rustls",
  "rustls-pemfile",
@@ -3240,6 +3242,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tpp-agents",
+ "tpp-database",
  "tpp-telemetry",
  "tracing",
  "transcode",
@@ -3249,7 +3252,7 @@ dependencies = [
 [[package]]
 name = "tpp-telemetry"
 version = "0.1.0"
-source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#53f2ffbfefc2caa2c02ba4d62637ede614103b17"
+source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#4f874fdd2ae34759c0d57a5bc9f036bf6f387fff"
 dependencies = [
  "opentelemetry",
  "tracing",

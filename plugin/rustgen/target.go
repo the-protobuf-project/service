@@ -5,7 +5,6 @@
 package rustgen
 
 import (
-	"embed"
 	"fmt"
 	"os"
 	"path"
@@ -43,15 +42,18 @@ func PrepareRequest(request *pluginpb.CodeGeneratorRequest) {
 	}
 }
 
-//go:embed templates/*.rs
-var templates embed.FS
-
 // Settings controls where generated Rust modules resolve their dependencies.
 type Settings struct {
 	// ProtoModule contains the prost messages and tonic bindings.
 	ProtoModule string
 	// ServiceModule contains this target's generated root mod.rs.
 	ServiceModule string
+	// ServicexModule is the runtime the generated services build on,
+	// runtime-rs's grpc::servicex by default (tpp-grpc, depended on as grpc,
+	// with default-features = false; servicex-store for store=true). The
+	// generated root re-exports it as servicex, so crate::service::servicex
+	// paths keep working.
+	ServicexModule string
 	// ErrorDomain overrides the service's google.api.default_host.
 	ErrorDomain string
 	// App, when set, also renders the application shell of that name under
@@ -94,6 +96,9 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 	if t.Settings.ServiceModule == "" {
 		t.Settings.ServiceModule = "crate::service"
 	}
+	if t.Settings.ServicexModule == "" {
+		t.Settings.ServicexModule = "grpc::servicex"
+	}
 	if t.Settings.RepositoryModule == "" {
 		t.Settings.RepositoryModule = "crate::repository"
 	}
@@ -106,7 +111,7 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 	if t.Settings.Store && sqlxPool[t.Settings.Database] == "" {
 		return fmt.Errorf("service: rust_database=%s: want postgres, mysql or sqlite", t.Settings.Database)
 	}
-	for _, v := range []string{t.Settings.ProtoModule, t.Settings.ServiceModule, t.Settings.RepositoryModule} {
+	for _, v := range []string{t.Settings.ProtoModule, t.Settings.ServiceModule, t.Settings.ServicexModule, t.Settings.RepositoryModule} {
 		if !validModule(v) {
 			return fmt.Errorf("service: invalid Rust module path %q", v)
 		}
@@ -120,28 +125,6 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 	}
 	if len(model.Packages) == 0 {
 		return nil
-	}
-	runtime := []struct{ template, output, note string }{
-		{"servicex.rs", "servicex/mod.rs", "Shared runtime of the generated AIP standard-method servers."},
-		{"feeds.rs", "servicex/feeds.rs", "Shared change-feed runtime."},
-		{"adapters.rs", "servicex/adapters.rs", "Shared event and idempotency record adapters."},
-	}
-	if t.Settings.Store {
-		runtime = append(runtime, struct{ template, output, note string }{"store.rs", "servicex/store.rs", "The standard methods' handlers over runtime-rs repositories (store=true)."})
-	}
-	for _, file := range runtime {
-		data, err := templates.ReadFile("templates/" + file.template)
-		if err != nil {
-			return err
-		}
-		body := string(data)
-		if file.template == "servicex.rs" && t.Settings.Store {
-			body = strings.Replace(body, "mod feeds;\n", "mod feeds;\nmod store;\n", 1)
-			body = strings.Replace(body, "pub use feeds::*;\n", "pub use feeds::*;\npub use store::*;\n", 1)
-		}
-		if err := t.emit(p, file.output, nil, file.note, body); err != nil {
-			return err
-		}
 	}
 	tree := &moduleNode{children: map[string]*moduleNode{}}
 	for _, pkg := range model.Packages {
@@ -225,7 +208,8 @@ type moduleNode struct {
 func (t *Target) modules(p *protogen.Plugin, n *moduleNode, dir string) error {
 	var out strings.Builder
 	if dir == "" {
-		out.WriteString("pub mod servicex;\n\n")
+		// The runtime the services build on, under the name they use for it.
+		fmt.Fprintf(&out, "pub use %s as servicex;\n\n", t.Settings.ServicexModule)
 		if t.Settings.App != "" {
 			out.WriteString("pub mod app;\n\n")
 		}
