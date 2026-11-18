@@ -357,8 +357,9 @@ Next: [Go](#go) covers hooks, custom methods and the application shell.
 <a id="rust-setup"></a>
 #### Rust
 
-protoc-gen-service writes the tonic service implementations; the prost messages
-and tonic bindings come from `tonic-prost-build` in your `build.rs`.
+protoc-gen-service writes the tonic service implementations over runtime-rs's
+`grpc::servicex`; the prost messages and tonic bindings come from
+`tonic-prost-build` in your `build.rs`.
 
 ```yaml
 # buf.gen.yaml
@@ -388,14 +389,15 @@ buf build proto --exclude-source-info -o descriptor.binpb
 
 ```toml
 [dependencies]
+# The servicex runtime the generated services build on, without the hybrid
+# server (default-features = false). Add features = ["servicex-store"] for
+# store=true, or drop default-features = false to serve REST and MCP too.
+grpc = { package = "tpp-grpc", git = "https://github.com/the-protobuf-project/runtime-rs", branch = "main", default-features = false }
 tonic = "0.14"
 tonic-prost = "0.14"
-tonic-types = "0.14"
 prost = "0.14"
 prost-types = "0.14"
 prost-reflect = { version = "0.16", features = ["serde"] }
-futures-core = "0.3"
-serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [build-dependencies]
@@ -627,13 +629,15 @@ the generated tree are mounted. `error_domain` applies in every language.
 The output uses the proto package hierarchy (`acme/directory/v1/`), with
 `mod.rs` files exposing the same package-level API. Each service has its own
 file (`organizations.rs`); `feeds.rs`, `errors.rs`, and `adapters.rs` are emitted
-when needed. Shared behavior lives in `servicex/mod.rs`, `servicex/feeds.rs`, and
-`servicex/adapters.rs`. Every file carries the same provenance header in
-every language.
+when needed. Shared behavior is runtime-rs's `grpc::servicex`, which the
+generated root re-exports as `servicex`, so `crate::service::servicex` paths
+keep working (`rust_servicex_module` names it otherwise). Every file carries
+the same provenance header in every language.
 
-When upgrading from the flat layout, remove the old generated `servicex.rs`
-and `<proto.package>.svc.rs` files before regenerating. The fixture update
-command performs this cleanup for `examples/rust`.
+When upgrading from an output that generated `servicex/` itself (before
+protoc-gen-service v0.4.0), delete that directory and add the `tpp-grpc`
+dependency; from the older flat layout, also remove `servicex.rs` and the
+`<proto.package>.svc.rs` files before regenerating.
 
 Every RPC is answered by a **handler** the application registers: the
 request message in, the response message out -- a Diesel query, a call to
@@ -775,6 +779,7 @@ protos.
 | `package_suffix` | `svc` | |
 | `app` | | Also generate the application shell of this name ([Go](#the-application-shell), [Rust](#the-application-shell-1)). Go: needs `store=true`. |
 | `rust_repository_module` | `crate::repository` | Rust, `store=true`: where protoc-gen-store's `lang=rust` repositories live (`<module>::<package path>`), with protoc-gen-cache's `cache` module beside each. |
+| `rust_servicex_module` | `grpc::servicex` | Rust: the servicex runtime the generated services build on (runtime-rs `tpp-grpc`, depended on as `grpc`); the generated root re-exports it as `servicex`. |
 | `rust_database` | `postgres` | Rust app shell, `store=true`: the SQL dialect it opens (`postgres`, `mysql`, `sqlite`). |
 
 `bindings` places the bindings per proto package, for a module whose stubs
