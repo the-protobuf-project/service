@@ -5,7 +5,7 @@
 // source: acme/booking/v1/booking.proto
 //
 // AIP standard-method server for acme.booking.v1.Holds.
-// annotations: entity.v1 v1.7.1, service.v1 dev
+// annotations: entity.v1 v1.8.0, service.v1 dev
 // engine:      protokit v1.4.0
 //
 // service — https://github.com/the-protobuf-project/service

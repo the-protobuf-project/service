@@ -13,12 +13,9 @@ resource, `repositories(db, pool)`) and protoc-gen-cache's `lang=rust`
 method over SQLite in memory, and the catalog's shops through the cache on
 tpp-cache's in-memory driver.
 
-runtime-rs is a path dependency on the `runtime-rs-cache-repo` worktree
-(branch `feat/cached-repository`: `feat/repository-impl`'s RecordsRepository
-plus `database::repository::cached`, which the cache output needs), so this
-crate builds only beside that checkout and is not in CI yet. Once both
-branches merge, pin the four runtime-rs crates to one git rev and add the
-crate to the "Generated Rust services" job.
+runtime-rs is a git dependency on its `main` branch; `Cargo.lock` pins the
+commit, so CI's `--locked` builds reproduce. The "Generated Rust services" job
+runs this crate's fmt, clippy and tests.
 
 `src/generated/` is checked by `go test ./plugin/rustgen` (`-update-rust`
 rewrites it). Regenerate `src/repository/` with protoc-gen-store

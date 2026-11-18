@@ -5,7 +5,7 @@
 // source: acme/directory/v1/directory.proto
 //
 // Registration of package acme.directory.v1's servers with runtime-go's HybridServer.
-// annotations: entity.v1 v1.7.1, service.v1 dev
+// annotations: entity.v1 v1.8.0, service.v1 dev
 // engine:      protokit v1.4.0
 //
 // service — https://github.com/the-protobuf-project/service

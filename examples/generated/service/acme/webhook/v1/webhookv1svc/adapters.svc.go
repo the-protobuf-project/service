@@ -5,7 +5,7 @@
 // source: acme/webhook/v1/webhook.proto
 //
 // runtime-go store adapters over package acme.webhook.v1's repositories.
-// annotations: entity.v1 v1.7.1, service.v1 dev
+// annotations: entity.v1 v1.8.0, service.v1 dev
 // engine:      protokit v1.4.0
 //
 // service — https://github.com/the-protobuf-project/service
