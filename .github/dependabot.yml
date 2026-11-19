@@ -1,9 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: "gomod"
-    directories:
-      - "/"
-      - "/examples"
+    directory: "/" # examples/ resolves runtime-go through CI's sibling checkout
     schedule:
       interval: "weekly"
   - package-ecosystem: "cargo"
