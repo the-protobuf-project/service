@@ -18,12 +18,12 @@
 package server
 
 import (
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/service/examples/generated/repository/acme/booking"
 	"github.com/the-protobuf-project/service/examples/generated/repository/acme/calendar"
 	"github.com/the-protobuf-project/service/examples/generated/repository/acme/directory"
 	"github.com/the-protobuf-project/service/examples/generated/repository/acme/requestkeys"
 	"github.com/the-protobuf-project/service/examples/generated/repository/acme/webhook"
-	"github.com/the-protobuf-project/service/examples/generated/repository/repox"
 )
 
 // Repositories are every repository of the run, opened on one connection:

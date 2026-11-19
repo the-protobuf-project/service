@@ -15,9 +15,9 @@ package calendarv1svc
 import (
 	"context"
 
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/calendar/v1"
 	"github.com/the-protobuf-project/service/examples/generated/repository/acme/calendar"
-	"github.com/the-protobuf-project/service/examples/generated/repository/repox"
 	"github.com/the-protobuf-project/service/examples/generated/service/servicex"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"

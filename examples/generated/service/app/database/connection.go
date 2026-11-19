@@ -22,7 +22,7 @@ import (
 	"sync"
 
 	"github.com/the-protobuf-project/runtime-go/cache"
-	"github.com/the-protobuf-project/service/examples/generated/repository/repox"
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/service/examples/generated/service/app/config"
 	"gorm.io/gorm"
 )

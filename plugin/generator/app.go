@@ -504,7 +504,11 @@ func serviceOf(model *spec.Model, sv *appService) *spec.Service {
 	return nil
 }
 
-func repoxOfModule(module string) string { return path.Join(module, "repox") }
+// repoxImport is the runtime the generated repositories build on: runtime-go's
+// database/repox (store v1.9.0 and later; before, each project generated its own).
+const repoxImport = "github.com/the-protobuf-project/runtime-go/database/repox"
+
+func repoxOfModule(string) string { return repoxImport }
 
 // PackageSourcesOf returns the sorted source files of every package in model.
 func PackageSourcesOf(model *spec.Model) []string {

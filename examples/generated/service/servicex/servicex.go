@@ -37,7 +37,7 @@ import (
 
 	"github.com/the-protobuf-project/runtime-go/grpc/problem"
 
-	"github.com/the-protobuf-project/service/examples/generated/repository/repox"
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 )
 
 // Reasons are the google.rpc.ErrorInfo reasons the generated servers return.

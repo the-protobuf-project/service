@@ -15,10 +15,10 @@ package archivev1svc
 import (
 	"context"
 
-	"example.com/gen/repository/repox"
 	"example.com/gen/repository/v1/archiveexample"
 	"example.com/gen/service/servicex"
 	"example.com/test/gen"
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 

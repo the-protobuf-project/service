@@ -15,9 +15,9 @@ package bookingv1svc
 import (
 	"context"
 
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/booking/v1"
 	"github.com/the-protobuf-project/service/examples/generated/repository/acme/booking"
-	"github.com/the-protobuf-project/service/examples/generated/repository/repox"
 	"github.com/the-protobuf-project/service/examples/generated/service/servicex"
 )
 

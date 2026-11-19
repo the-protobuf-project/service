@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
-	"github.com/the-protobuf-project/service/examples/generated/repository/repox"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

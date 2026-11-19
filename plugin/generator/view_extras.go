@@ -264,13 +264,8 @@ func adaptersFileView(pkg *spec.Package, servicex string) (*adaptersFile, []stri
 	return f, warnings, nil
 }
 
-// repoxOf is the repox package beside r's repository.
-func repoxOf(r *spec.Resource) string {
-	p := r.Repository.Path
-	p = p[:strings.LastIndex(p, "/")]
-	p = p[:strings.LastIndex(p, "/")]
-	return p + "/repox"
-}
+// repoxOf is the runtime r's repository builds on.
+func repoxOf(*spec.Resource) string { return repoxImport }
 
 // removeOf is the repository call that removes one of r's records for good.
 func removeOf(r *spec.Resource) string {

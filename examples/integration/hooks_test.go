@@ -15,12 +15,12 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/runtime-go/grpc/problem"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/calendar/v1"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/directory/v1"
 	"github.com/the-protobuf-project/service/examples/generated/repository/acme/calendar"
 	"github.com/the-protobuf-project/service/examples/generated/repository/acme/directory"
-	"github.com/the-protobuf-project/service/examples/generated/repository/repox"
 	"github.com/the-protobuf-project/service/examples/generated/service/acme/calendar/v1/calendarv1svc"
 	"github.com/the-protobuf-project/service/examples/generated/service/acme/directory/v1/directoryv1svc"
 	"github.com/the-protobuf-project/service/examples/generated/service/servicex"

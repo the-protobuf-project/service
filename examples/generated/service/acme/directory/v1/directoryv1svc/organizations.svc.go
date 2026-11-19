@@ -15,9 +15,9 @@ package directoryv1svc
 import (
 	"context"
 
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/directory/v1"
 	"github.com/the-protobuf-project/service/examples/generated/repository/acme/directory"
-	"github.com/the-protobuf-project/service/examples/generated/repository/repox"
 	"github.com/the-protobuf-project/service/examples/generated/service/servicex"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
