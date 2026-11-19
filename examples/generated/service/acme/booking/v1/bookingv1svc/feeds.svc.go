@@ -15,10 +15,10 @@ package bookingv1svc
 import (
 	"context"
 
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/runtime-go/events"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/booking/v1"
 	"github.com/the-protobuf-project/service/examples/generated/repository/acme/booking"
-	"github.com/the-protobuf-project/service/examples/generated/service/servicex"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -61,10 +61,10 @@ func HoldFeedSpec(repo booking.HoldRepository) events.FeedSpec[*bookingv1.Hold] 
 		ID:       "example.acme.hold",
 		ReadMask: []string{"name", "etag", "update_time", "create_time", "state"},
 		List: func(ctx context.Context, q events.Query) ([]*bookingv1.Hold, string, error) {
-			return repo.List(ctx, "organizationalUnits/-", servicex.FeedInput(q))
+			return repo.List(ctx, "organizationalUnits/-", repox.FeedInput(q))
 		},
 		Change: func(r *bookingv1.Hold) events.Change {
-			return events.Change{Type: HoldEventType(r), Time: servicex.Time(r.GetUpdateTime()), Scope: servicex.Scope(r.GetName(), "organizationalUnits")}
+			return events.Change{Type: HoldEventType(r), Time: repox.Time(r.GetUpdateTime()), Scope: repox.Scope(r.GetName(), "organizationalUnits")}
 		},
 		Data: func(r *bookingv1.Hold) ([]byte, error) { return protojson.Marshal(r) },
 	}
@@ -86,7 +86,7 @@ const (
 // state declares, else what last happened to it; "" for a change
 // nobody is sent.
 func ReservationEventType(r *bookingv1.Reservation) string {
-	switch servicex.Lifecycle(r.GetCreateTime(), r.GetUpdateTime(), r.GetDeleteTime()) {
+	switch repox.Lifecycle(r.GetCreateTime(), r.GetUpdateTime(), r.GetDeleteTime()) {
 	case events.Created:
 		return ReservationCreatedEvent
 	case events.Updated:
@@ -105,10 +105,10 @@ func ReservationFeedSpec(repo booking.ReservationRepository) events.FeedSpec[*bo
 		ID:       "acme.booking.v1.reservation",
 		ReadMask: []string{"name", "etag", "update_time", "create_time", "delete_time"},
 		List: func(ctx context.Context, q events.Query) ([]*bookingv1.Reservation, string, error) {
-			return repo.List(ctx, "organizationalUnits/-", servicex.FeedInput(q))
+			return repo.List(ctx, "organizationalUnits/-", repox.FeedInput(q))
 		},
 		Change: func(r *bookingv1.Reservation) events.Change {
-			return events.Change{Type: ReservationEventType(r), Time: servicex.Time(r.GetUpdateTime()), Scope: servicex.Scope(r.GetName(), "organizationalUnits")}
+			return events.Change{Type: ReservationEventType(r), Time: repox.Time(r.GetUpdateTime()), Scope: repox.Scope(r.GetName(), "organizationalUnits")}
 		},
 		Data: func(r *bookingv1.Reservation) ([]byte, error) { return protojson.Marshal(r) },
 	}

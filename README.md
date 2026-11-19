@@ -326,9 +326,9 @@ Register a handler per RPC and serve:
 import (
     directoryv1 "example.com/app/gen/go/acme/directory/v1"
     "example.com/app/gen/service/acme/directory/v1/directoryv1svc"
-    "example.com/app/gen/service/servicex"
     "github.com/the-protobuf-project/runtime-go/grpc"
     "github.com/the-protobuf-project/runtime-go/grpc/options"
+    "github.com/the-protobuf-project/runtime-go/grpc/servicex"
 )
 
 srv, err := directoryv1svc.NewOrganizationsServer(directoryv1svc.OrganizationsHandlers{
@@ -502,7 +502,9 @@ An Update handler receives the merged record carrying the caller's etag and
 the canonical mask; handlers that write enforce the etag in the write.
 Handlers return `servicex.ErrNotFound`, `ErrAlreadyExists`, `ErrConflict`
 and `ErrInvalidArgument` (or errors wrapping them) for the standard
-outcomes, rendered with the standard reasons (`servicex/errors.svc.md`).
+outcomes, rendered with the standard reasons (runtime-go's
+[`grpc/servicex`](https://github.com/the-protobuf-project/runtime-go/tree/main/grpc/servicex)).
+With `store=true` the translator also maps the repositories' reference errors.
 
 ### What it generates
 
@@ -518,9 +520,11 @@ handler model's `<service>.svc.go` holds `<S>Handlers` in place of
 | `errors.svc.go`, `errors.svc.md` | For enums with `(service.v1.error_domain)`: `ErrorDomain`, `Reason…` constants, sentinels, `Kinds()`, `Reasons()`, `NewTranslator()`, `Retryable()`, a `New<Reason>` constructor per reason; and the Markdown table for your error reference, between `protoc-gen-service:errors` markers. |
 | `adapters.svc.go` | For resources with `(service.v1.adapter)`: `EventStore` (runtime-go `events.Store`) over webhook, delivery and feed cursor repositories; `IdempotencyStore` (`idempotency.Store`) over an idempotency key repository. |
 
-And once per run, `servicex/`: the shared runtime (options, the
-`problem.Translator` wiring, request checks, feed query translation) and
-`servicex/errors.svc.md`, the table of the standard reasons.
+The shared runtime (options, the `problem.Translator` wiring, request
+checks) is runtime-go's `grpc/servicex`, and the store helpers (feed query
+translation, store errors) are runtime-go's `database/repox`. Before
+service v0.4.2 each run generated its own `servicex/`; regenerating removes
+it.
 
 ### Hooks and custom methods
 

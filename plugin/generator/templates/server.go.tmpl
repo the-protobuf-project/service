@@ -71,7 +71,7 @@ func New{{ .GoName }}Server(repos {{ .GoName }}Repositories, hooks {{ .GoName }}
 	return &{{ .GoName }}Server{
 		repos: repos,
 		hooks: hooks,
-		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator({{ quote .Domain }})}, opts),
+		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator({{ quote .Domain }}).Handle(repox.ReferenceStatus)}, opts),
 	}
 }
 

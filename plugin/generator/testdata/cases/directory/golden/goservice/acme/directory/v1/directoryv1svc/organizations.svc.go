@@ -16,9 +16,9 @@ import (
 	"context"
 
 	"example.com/gen/repository/v1/directoryacmeexample"
-	"example.com/gen/service/servicex"
 	"example.com/test/gen"
 	"github.com/the-protobuf-project/runtime-go/database/repox"
+	"github.com/the-protobuf-project/runtime-go/grpc/servicex"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -120,7 +120,7 @@ func NewOrganizationsServer(repos OrganizationsRepositories, hooks Organizations
 	return &OrganizationsServer{
 		repos: repos,
 		hooks: hooks,
-		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator("directory.acme.example")}, opts),
+		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator("directory.acme.example").Handle(repox.ReferenceStatus)}, opts),
 	}
 }
 

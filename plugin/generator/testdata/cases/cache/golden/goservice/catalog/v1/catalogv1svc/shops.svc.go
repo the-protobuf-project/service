@@ -16,9 +16,9 @@ import (
 	"context"
 
 	"example.com/gen/repository/v1/catalogexample"
-	"example.com/gen/service/servicex"
 	"example.com/test/gen"
 	"github.com/the-protobuf-project/runtime-go/database/repox"
+	"github.com/the-protobuf-project/runtime-go/grpc/servicex"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -105,7 +105,7 @@ func NewShopsServer(repos ShopsRepositories, hooks ShopsHooks, opts ...servicex.
 	return &ShopsServer{
 		repos: repos,
 		hooks: hooks,
-		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator("catalog.v1")}, opts),
+		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator("catalog.v1").Handle(repox.ReferenceStatus)}, opts),
 	}
 }
 

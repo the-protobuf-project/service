@@ -40,7 +40,7 @@ func {{ .GoName }}EventType(r *{{ .PB }}) string {
 	}
 {{- end }}
 {{- if .Lifecycle }}
-	switch servicex.Lifecycle({{ if .CreateGet }}r.{{ .CreateGet }}{{ else }}nil{{ end }}, r.GetUpdateTime(), {{ if .DeleteGet }}r.{{ .DeleteGet }}{{ else }}nil{{ end }}) {
+	switch repox.Lifecycle({{ if .CreateGet }}r.{{ .CreateGet }}{{ else }}nil{{ end }}, r.GetUpdateTime(), {{ if .DeleteGet }}r.{{ .DeleteGet }}{{ else }}nil{{ end }}) {
 {{- range .Lifecycle }}
 	case events.{{ .GoName }}:
 		return {{ $f.GoName }}{{ .GoName }}Event
@@ -58,10 +58,10 @@ func {{ .GoName }}FeedSpec(repo {{ .Repo }}) events.FeedSpec[*{{ .PB }}] {
 		ID:       {{ quote .ID }},
 		ReadMask: {{ .Mask }},
 		List: func(ctx context.Context, q events.Query) ([]*{{ .PB }}, string, error) {
-			return repo.List(ctx, {{ if .Wildcard }}{{ quote .Wildcard }}, {{ end }}servicex.FeedInput(q))
+			return repo.List(ctx, {{ if .Wildcard }}{{ quote .Wildcard }}, {{ end }}repox.FeedInput(q))
 		},
 		Change: func(r *{{ .PB }}) events.Change {
-			return events.Change{Type: {{ .GoName }}EventType(r), Time: servicex.Time(r.GetUpdateTime()){{ if .Scope }}, Scope: servicex.Scope(r.GetName(), {{ quote .Scope }}){{ end }}}
+			return events.Change{Type: {{ .GoName }}EventType(r), Time: repox.Time(r.GetUpdateTime()){{ if .Scope }}, Scope: repox.Scope(r.GetName(), {{ quote .Scope }}){{ end }}}
 		},
 		Data: func(r *{{ .PB }}) ([]byte, error) { return protojson.Marshal(r) },
 	}

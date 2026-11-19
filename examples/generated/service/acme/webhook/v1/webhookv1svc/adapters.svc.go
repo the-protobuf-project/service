@@ -21,7 +21,6 @@ import (
 	"github.com/the-protobuf-project/runtime-go/events"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/webhook/v1"
 	"github.com/the-protobuf-project/service/examples/generated/repository/acme/webhook"
-	"github.com/the-protobuf-project/service/examples/generated/service/servicex"
 )
 
 // EventStore is runtime-go's events.Store over the generated webhook,
@@ -46,7 +45,7 @@ func eventWebhook(m *webhookv1.Webhook) events.Webhook {
 		Scope:      m.GetOrganizationalUnit(),
 		Paused:     m.GetPaused(),
 		Secret:     m.GetSecret(),
-		CreateTime: servicex.Time(m.GetCreateTime()),
+		CreateTime: repox.Time(m.GetCreateTime()),
 	}
 }
 
@@ -71,7 +70,7 @@ func (s *EventStore) ListWebhooks(ctx context.Context, pageToken string) ([]even
 func (s *EventStore) GetWebhook(ctx context.Context, name string) (events.Webhook, error) {
 	m, err := s.Webhooks.Get(ctx, name)
 	if err != nil {
-		return events.Webhook{}, servicex.StoreErr(err, events.ErrNotFound, nil, nil)
+		return events.Webhook{}, repox.StoreErr(err, events.ErrNotFound, nil, nil)
 	}
 	return eventWebhook(m), nil
 }
@@ -80,32 +79,32 @@ func (s *EventStore) GetWebhook(ctx context.Context, name string) (events.Webhoo
 func cursorName(feed string) string { return "feedCursors" + "/" + feed }
 
 func eventCursor(feed string, m *webhookv1.FeedCursor) events.Cursor {
-	return events.Cursor{Feed: feed, Position: servicex.Time(m.GetPositionTime()), Etag: m.GetEtag()}
+	return events.Cursor{Feed: feed, Position: repox.Time(m.GetPositionTime()), Etag: m.GetEtag()}
 }
 
 // GetCursor implements events.Store.
 func (s *EventStore) GetCursor(ctx context.Context, feed string) (events.Cursor, error) {
 	m, err := s.Cursors.Get(ctx, cursorName(feed))
 	if err != nil {
-		return events.Cursor{}, servicex.StoreErr(err, events.ErrNotFound, nil, nil)
+		return events.Cursor{}, repox.StoreErr(err, events.ErrNotFound, nil, nil)
 	}
 	return eventCursor(feed, m), nil
 }
 
 // CreateCursor implements events.Store.
 func (s *EventStore) CreateCursor(ctx context.Context, c events.Cursor) (events.Cursor, error) {
-	m, err := s.Cursors.Create(ctx, &webhookv1.FeedCursor{Name: cursorName(c.Feed), PositionTime: servicex.Timestamp(c.Position)})
+	m, err := s.Cursors.Create(ctx, &webhookv1.FeedCursor{Name: cursorName(c.Feed), PositionTime: repox.Timestamp(c.Position)})
 	if err != nil {
-		return events.Cursor{}, servicex.StoreErr(err, nil, events.ErrAlreadyExists, nil)
+		return events.Cursor{}, repox.StoreErr(err, nil, events.ErrAlreadyExists, nil)
 	}
 	return eventCursor(c.Feed, m), nil
 }
 
 // UpdateCursor implements events.Store.
 func (s *EventStore) UpdateCursor(ctx context.Context, c events.Cursor) error {
-	m := &webhookv1.FeedCursor{Name: cursorName(c.Feed), PositionTime: servicex.Timestamp(c.Position), Etag: c.Etag}
+	m := &webhookv1.FeedCursor{Name: cursorName(c.Feed), PositionTime: repox.Timestamp(c.Position), Etag: c.Etag}
 	_, err := s.Cursors.Update(ctx, m, []string{"position_time"})
-	return servicex.StoreErr(err, events.ErrNotFound, nil, events.ErrConflict)
+	return repox.StoreErr(err, events.ErrNotFound, nil, events.ErrConflict)
 }
 
 func eventDeliveryState(m *webhookv1.Delivery) events.DeliveryState {
@@ -132,9 +131,9 @@ func eventDelivery(m *webhookv1.Delivery) events.Delivery {
 		AttemptCount:    m.GetAttemptCount(),
 		ResponseCode:    m.GetResponseCode(),
 		ErrorMessage:    m.GetErrorMessage(),
-		NextAttemptTime: servicex.Time(m.GetNextAttemptTime()),
-		DeliverTime:     servicex.Time(m.GetDeliverTime()),
-		CreateTime:      servicex.Time(m.GetCreateTime()),
+		NextAttemptTime: repox.Time(m.GetNextAttemptTime()),
+		DeliverTime:     repox.Time(m.GetDeliverTime()),
+		CreateTime:      repox.Time(m.GetCreateTime()),
 		Etag:            m.GetEtag(),
 	}
 }
@@ -150,8 +149,8 @@ func storedDelivery(d events.Delivery) *webhookv1.Delivery {
 		AttemptCount:    d.AttemptCount,
 		ResponseCode:    d.ResponseCode,
 		ErrorMessage:    d.ErrorMessage,
-		NextAttemptTime: servicex.Timestamp(d.NextAttemptTime),
-		DeliverTime:     servicex.Timestamp(d.DeliverTime),
+		NextAttemptTime: repox.Timestamp(d.NextAttemptTime),
+		DeliverTime:     repox.Timestamp(d.DeliverTime),
 		Etag:            d.Etag,
 	}
 	switch d.State {
@@ -174,7 +173,7 @@ func (s *EventStore) CreateDelivery(ctx context.Context, d events.Delivery) erro
 		webhook = events.WebhookOf(d.Name)
 	}
 	_, err := s.Deliveries.Create(ctx, webhook, m)
-	return servicex.StoreErr(err, nil, events.ErrAlreadyExists, nil)
+	return repox.StoreErr(err, nil, events.ErrAlreadyExists, nil)
 }
 
 // DueDeliveries implements events.Store.
@@ -236,7 +235,7 @@ func (s *EventStore) UpdateDelivery(ctx context.Context, d events.Delivery, path
 		m, err = s.Deliveries.UpdateWithOutputOnly(ctx, storedDelivery(d), mutable, output)
 	}
 	if err != nil {
-		return events.Delivery{}, servicex.StoreErr(err, nil, nil, events.ErrConflict)
+		return events.Delivery{}, repox.StoreErr(err, nil, nil, events.ErrConflict)
 	}
 	return eventDelivery(m), nil
 }

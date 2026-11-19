@@ -15,11 +15,12 @@ package server
 import (
 	"context"
 
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/runtime-go/grpc"
 	"github.com/the-protobuf-project/runtime-go/grpc/problem"
+	"github.com/the-protobuf-project/runtime-go/grpc/servicex"
 	"github.com/the-protobuf-project/service/examples/generated/service/acme/booking/v1/bookingv1svc"
 	"github.com/the-protobuf-project/service/examples/generated/service/app/telemetry"
-	"github.com/the-protobuf-project/service/examples/generated/service/servicex"
 )
 
 // Traced runs fn in a span of the process's pipeline, with the request
@@ -52,7 +53,7 @@ func Reasons() []problem.Reason {
 // Translator is the problem.Translator of a server whose ErrorInfo domain is
 // domain: the generated servers' reasons and every package's.
 func Translator(domain string) *problem.Translator {
-	return servicex.NewTranslator(domain, Kinds()...).Declare(Reasons()...)
+	return servicex.NewTranslator(domain, Kinds()...).Declare(Reasons()...).Handle(repox.ReferenceStatus)
 }
 
 // ServerOptions are the options every generated server takes: the translator

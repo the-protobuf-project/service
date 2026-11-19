@@ -16,9 +16,9 @@ import (
 	"context"
 
 	"github.com/the-protobuf-project/runtime-go/database/repox"
+	"github.com/the-protobuf-project/runtime-go/grpc/servicex"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/booking/v1"
 	"github.com/the-protobuf-project/service/examples/generated/repository/acme/booking"
-	"github.com/the-protobuf-project/service/examples/generated/service/servicex"
 )
 
 // ReservationsRepositories are the generated repositories ReservationsServer
@@ -97,7 +97,7 @@ func NewReservationsServer(repos ReservationsRepositories, hooks ReservationsHoo
 	return &ReservationsServer{
 		repos: repos,
 		hooks: hooks,
-		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator("booking.acme.example")}, opts),
+		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator("booking.acme.example").Handle(repox.ReferenceStatus)}, opts),
 	}
 }
 

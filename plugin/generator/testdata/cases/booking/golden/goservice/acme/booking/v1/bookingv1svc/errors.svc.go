@@ -15,8 +15,9 @@ package bookingv1svc
 import (
 	"errors"
 
-	"example.com/gen/service/servicex"
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/runtime-go/grpc/problem"
+	"github.com/the-protobuf-project/runtime-go/grpc/servicex"
 	"google.golang.org/grpc/codes"
 )
 
@@ -66,7 +67,7 @@ func Reasons() []problem.Reason {
 // servicex.WithTranslator, and use it as the interceptor of hand-written
 // services so all of them speak one vocabulary.
 func NewTranslator(kinds ...problem.Kind) *problem.Translator {
-	return servicex.NewTranslator(ErrorDomain, append(kinds, Kinds()...)...).Declare(Reasons()...)
+	return servicex.NewTranslator(ErrorDomain, append(kinds, Kinds()...)...).Declare(Reasons()...).Handle(repox.ReferenceStatus)
 }
 
 // Retryable reports whether retrying a call that failed with reason can

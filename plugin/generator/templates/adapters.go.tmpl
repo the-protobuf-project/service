@@ -44,10 +44,10 @@ func eventWebhook(m *{{ .WebhookPB }}) events.Webhook {
 		PreviousSecret: m.{{ .Get }},
 {{- end }}
 {{- with index $w "rotate_time" }}
-		RotateTime: servicex.Time(m.{{ .Get }}),
+		RotateTime: repox.Time(m.{{ .Get }}),
 {{- end }}
 {{- with index $w "create_time" }}
-		CreateTime: servicex.Time(m.{{ .Get }}),
+		CreateTime: repox.Time(m.{{ .Get }}),
 {{- end }}
 	}
 }
@@ -73,7 +73,7 @@ func (s *EventStore) ListWebhooks(ctx context.Context, pageToken string) ([]even
 func (s *EventStore) GetWebhook(ctx context.Context, name string) (events.Webhook, error) {
 	m, err := s.Webhooks.Get(ctx, name)
 	if err != nil {
-		return events.Webhook{}, servicex.StoreErr(err, events.ErrNotFound, nil, nil)
+		return events.Webhook{}, repox.StoreErr(err, events.ErrNotFound, nil, nil)
 	}
 {{- with index $w "delete_time" }}
 	if m.{{ .Get }} != nil {
@@ -87,36 +87,36 @@ func (s *EventStore) GetWebhook(ctx context.Context, name string) (events.Webhoo
 func cursorName(feed string) string { return {{ quote .CursorCollection }} + "/" + feed }
 
 func eventCursor(feed string, m *{{ .CursorPB }}) events.Cursor {
-	return events.Cursor{Feed: feed, Position: servicex.Time(m.{{ (index $c "position").Get }}), Etag: m.{{ (index $c "etag").Get }}}
+	return events.Cursor{Feed: feed, Position: repox.Time(m.{{ (index $c "position").Get }}), Etag: m.{{ (index $c "etag").Get }}}
 }
 
 // GetCursor implements events.Store.
 func (s *EventStore) GetCursor(ctx context.Context, feed string) (events.Cursor, error) {
 	m, err := s.Cursors.Get(ctx, cursorName(feed))
 	if err != nil {
-		return events.Cursor{}, servicex.StoreErr(err, events.ErrNotFound, nil, nil)
+		return events.Cursor{}, repox.StoreErr(err, events.ErrNotFound, nil, nil)
 	}
 	return eventCursor(feed, m), nil
 }
 
 // CreateCursor implements events.Store.
 func (s *EventStore) CreateCursor(ctx context.Context, c events.Cursor) (events.Cursor, error) {
-	m, err := s.Cursors.Create(ctx, &{{ .CursorPB }}{Name: cursorName(c.Feed), {{ (index $c "position").GoName }}: servicex.Timestamp(c.Position)})
+	m, err := s.Cursors.Create(ctx, &{{ .CursorPB }}{Name: cursorName(c.Feed), {{ (index $c "position").GoName }}: repox.Timestamp(c.Position)})
 	if err != nil {
-		return events.Cursor{}, servicex.StoreErr(err, nil, events.ErrAlreadyExists, nil)
+		return events.Cursor{}, repox.StoreErr(err, nil, events.ErrAlreadyExists, nil)
 	}
 	return eventCursor(c.Feed, m), nil
 }
 
 // UpdateCursor implements events.Store.
 func (s *EventStore) UpdateCursor(ctx context.Context, c events.Cursor) error {
-	m := &{{ .CursorPB }}{Name: cursorName(c.Feed), {{ (index $c "position").GoName }}: servicex.Timestamp(c.Position), {{ (index $c "etag").GoName }}: c.Etag}
+	m := &{{ .CursorPB }}{Name: cursorName(c.Feed), {{ (index $c "position").GoName }}: repox.Timestamp(c.Position), {{ (index $c "etag").GoName }}: c.Etag}
 {{- if (index $c "position").OutputOnly }}
 	_, err := s.Cursors.UpdateOutputOnly(ctx, m, []string{ {{- quote (index $c "position").Proto -}} })
 {{- else }}
 	_, err := s.Cursors.Update(ctx, m, []string{ {{- quote (index $c "position").Proto -}} })
 {{- end }}
-	return servicex.StoreErr(err, events.ErrNotFound, nil, events.ErrConflict)
+	return repox.StoreErr(err, events.ErrNotFound, nil, events.ErrConflict)
 }
 
 func eventDeliveryState(m *{{ .DeliveryPB }}) events.DeliveryState {
@@ -147,12 +147,12 @@ func eventDelivery(m *{{ .DeliveryPB }}) events.Delivery {
 {{- with index $d "error_message" }}
 		ErrorMessage: m.{{ .Get }},
 {{- end }}
-		NextAttemptTime: servicex.Time(m.{{ (index $d "next_attempt_time").Get }}),
+		NextAttemptTime: repox.Time(m.{{ (index $d "next_attempt_time").Get }}),
 {{- with index $d "deliver_time" }}
-		DeliverTime: servicex.Time(m.{{ .Get }}),
+		DeliverTime: repox.Time(m.{{ .Get }}),
 {{- end }}
 {{- with index $d "create_time" }}
-		CreateTime: servicex.Time(m.{{ .Get }}),
+		CreateTime: repox.Time(m.{{ .Get }}),
 {{- end }}
 		Etag: m.{{ (index $d "etag").Get }},
 	}
@@ -173,9 +173,9 @@ func storedDelivery(d events.Delivery) *{{ .DeliveryPB }} {
 {{- with index $d "error_message" }}
 		{{ .GoName }}: d.ErrorMessage,
 {{- end }}
-		{{ (index $d "next_attempt_time").GoName }}: servicex.Timestamp(d.NextAttemptTime),
+		{{ (index $d "next_attempt_time").GoName }}: repox.Timestamp(d.NextAttemptTime),
 {{- with index $d "deliver_time" }}
-		{{ .GoName }}: servicex.Timestamp(d.DeliverTime),
+		{{ .GoName }}: repox.Timestamp(d.DeliverTime),
 {{- end }}
 		{{ (index $d "etag").GoName }}: d.Etag,
 	}
@@ -199,7 +199,7 @@ func (s *EventStore) CreateDelivery(ctx context.Context, d events.Delivery) erro
 		webhook = events.WebhookOf(d.Name)
 	}
 	_, err := s.Deliveries.Create(ctx, webhook, m)
-	return servicex.StoreErr(err, nil, events.ErrAlreadyExists, nil)
+	return repox.StoreErr(err, nil, events.ErrAlreadyExists, nil)
 }
 
 // DueDeliveries implements events.Store.
@@ -267,7 +267,7 @@ func (s *EventStore) UpdateDelivery(ctx context.Context, d events.Delivery, path
 		m, err = s.Deliveries.UpdateWithOutputOnly(ctx, storedDelivery(d), mutable, output)
 	}
 	if err != nil {
-		return events.Delivery{}, servicex.StoreErr(err, nil, nil, events.ErrConflict)
+		return events.Delivery{}, repox.StoreErr(err, nil, nil, events.ErrConflict)
 	}
 	return eventDelivery(m), nil
 }
@@ -314,7 +314,7 @@ func (s *IdempotencyStore) Create(ctx context.Context, k idempotency.Key) error 
 func (s *IdempotencyStore) Get(ctx context.Context, name string) (idempotency.Key, error) {
 	m, err := s.Keys.Get(ctx, name)
 	if err != nil {
-		return idempotency.Key{}, servicex.StoreErr(err, idempotency.ErrNotFound, nil, nil)
+		return idempotency.Key{}, repox.StoreErr(err, idempotency.ErrNotFound, nil, nil)
 	}
 	k := idempotency.Key{
 		Name:      m.GetName(),
@@ -323,7 +323,7 @@ func (s *IdempotencyStore) Get(ctx context.Context, name string) (idempotency.Ke
 		State:     idempotency.InFlight,
 		Response:  m.{{ (index $k "response").Get }},
 {{- with index $k "create_time" }}
-		CreateTime: servicex.Time(m.{{ .Get }}),
+		CreateTime: repox.Time(m.{{ .Get }}),
 {{- end }}
 	}
 	if m.{{ (index $k "state").Get }} == {{ .Done }} {
