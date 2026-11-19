@@ -17,10 +17,10 @@ import (
 	"fmt"
 	"time"
 
-	"example.com/gen/repository/repox"
 	"example.com/gen/repository/v1/webhookacmeexample"
 	"example.com/gen/service/servicex"
 	"example.com/test/gen"
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/runtime-go/events"
 )
 

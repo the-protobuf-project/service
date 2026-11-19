@@ -15,10 +15,10 @@ package catalogv1svc
 import (
 	"context"
 
-	"example.com/gen/repository/repox"
 	"example.com/gen/repository/v1/catalogexample"
 	"example.com/gen/service/servicex"
 	"example.com/test/gen"
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 )
 
 // ProductsRepositories are the generated repositories ProductsServer

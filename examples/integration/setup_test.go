@@ -25,8 +25,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/service/examples/generated/gorm/acme"
-	"github.com/the-protobuf-project/service/examples/generated/repository/repox"
 )
 
 // open connects to SERVICE_TEST_DSN with every acme schema dropped and

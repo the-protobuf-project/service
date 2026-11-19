@@ -26,7 +26,7 @@ import (
 	"github.com/the-protobuf-project/runtime-go/events"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/the-protobuf-project/service/examples/generated/repository/repox"
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 )
 
 // FeedInput translates a feed's query into a repository list: an AIP-160

@@ -13,9 +13,9 @@
 package server
 
 import (
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/runtime-go/grpc/hints"
 	"github.com/the-protobuf-project/runtime-go/grpc/idempotency"
-	"github.com/the-protobuf-project/service/examples/generated/repository/repox"
 	"github.com/the-protobuf-project/service/examples/generated/service/acme/idempotency/v1/idempotencyv1svc"
 	"google.golang.org/grpc"
 )

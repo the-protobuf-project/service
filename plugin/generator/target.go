@@ -148,7 +148,7 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 	servicex := path.Join(s.GoModule, "servicex")
 	runtime := map[string]any{
 		"Banner":      banner(p, t.Versions, nil, "Shared runtime of the generated AIP standard-method servers."),
-		"RepoxImport": path.Join(s.RepositoryModule, "repox"),
+		"RepoxImport": repoxImport,
 		"Store":       s.Store,
 		"Repox":       map[bool]string{true: "repox.", false: ""}[s.Store],
 	}

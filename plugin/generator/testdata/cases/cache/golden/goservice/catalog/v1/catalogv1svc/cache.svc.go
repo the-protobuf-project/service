@@ -16,8 +16,8 @@ import (
 	"context"
 
 	"example.com/gen/cache/v1/catalogexamplecache"
-	"example.com/gen/repository/repox"
 	"github.com/the-protobuf-project/runtime-go/cache"
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 )
 
 // CachedShopsRepositories returns repos with the List of every
