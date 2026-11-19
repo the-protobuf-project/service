@@ -15,10 +15,10 @@ package calendarv1svc
 import (
 	"context"
 
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/runtime-go/events"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/calendar/v1"
 	"github.com/the-protobuf-project/service/examples/generated/repository/acme/calendar"
-	"github.com/the-protobuf-project/service/examples/generated/service/servicex"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -33,7 +33,7 @@ const (
 // state declares, else what last happened to it; "" for a change
 // nobody is sent.
 func EventEventType(r *calendarv1.Event) string {
-	switch servicex.Lifecycle(r.GetCreateTime(), r.GetUpdateTime(), r.GetDeleteTime()) {
+	switch repox.Lifecycle(r.GetCreateTime(), r.GetUpdateTime(), r.GetDeleteTime()) {
 	case events.Created:
 		return EventCreatedEvent
 	case events.Updated:
@@ -52,10 +52,10 @@ func EventFeedSpec(repo calendar.EventRepository) events.FeedSpec[*calendarv1.Ev
 		ID:       "example.acme.calendar.event",
 		ReadMask: []string{"name", "etag", "update_time", "create_time", "delete_time"},
 		List: func(ctx context.Context, q events.Query) ([]*calendarv1.Event, string, error) {
-			return repo.List(ctx, "calendars/-", servicex.FeedInput(q))
+			return repo.List(ctx, "calendars/-", repox.FeedInput(q))
 		},
 		Change: func(r *calendarv1.Event) events.Change {
-			return events.Change{Type: EventEventType(r), Time: servicex.Time(r.GetUpdateTime()), Scope: servicex.Scope(r.GetName(), "calendars")}
+			return events.Change{Type: EventEventType(r), Time: repox.Time(r.GetUpdateTime()), Scope: repox.Scope(r.GetName(), "calendars")}
 		},
 		Data: func(r *calendarv1.Event) ([]byte, error) { return protojson.Marshal(r) },
 	}

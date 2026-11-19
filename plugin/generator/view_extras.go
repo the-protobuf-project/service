@@ -44,13 +44,13 @@ type typesState struct {
 	Const, Value, Type string
 }
 
-func feedsFileView(pkg *spec.Package, servicex string) (*feedsFile, error) {
+func feedsFileView(pkg *spec.Package) (*feedsFile, error) {
 	if len(pkg.Feeds) == 0 {
 		return nil, nil
 	}
 	im := newImports()
 	im.std("context")
-	im.use(servicex, "servicex")
+	im.use(repoxImport, "repox")
 	im.use("github.com/the-protobuf-project/runtime-go/events", "events")
 	im.use("google.golang.org/protobuf/encoding/protojson", "protojson")
 	f := &feedsFile{Package: pkg.GoPackage}
@@ -106,9 +106,11 @@ type errorsFile struct {
 	Reasons []*spec.ErrorReason
 	Enums   []string // full names, for the doc comment
 	Proto   string
+	// Store adds the repositories' reference errors to NewTranslator.
+	Store bool
 }
 
-func errorsFileView(pkg *spec.Package, servicex string) (*errorsFile, error) {
+func errorsFileView(pkg *spec.Package, servicex string, store bool) (*errorsFile, error) {
 	if len(pkg.Errors) == 0 {
 		return nil, nil
 	}
@@ -116,7 +118,10 @@ func errorsFileView(pkg *spec.Package, servicex string) (*errorsFile, error) {
 	im.use("github.com/the-protobuf-project/runtime-go/grpc/problem", "problem")
 	im.use("google.golang.org/grpc/codes", "codes")
 	im.use(servicex, "servicex")
-	f := &errorsFile{Package: pkg.GoPackage, Domain: pkg.Errors[0].Domain, Proto: pkg.ProtoPackage}
+	if store {
+		im.use(repoxImport, "repox")
+	}
+	f := &errorsFile{Package: pkg.GoPackage, Domain: pkg.Errors[0].Domain, Proto: pkg.ProtoPackage, Store: store}
 	for _, e := range pkg.Errors {
 		f.Enums = append(f.Enums, string(e.Enum.Desc.FullName()))
 		f.Reasons = append(f.Reasons, e.Reasons...)
@@ -189,7 +194,7 @@ func outputOnly(fd *protogen.Field) bool {
 	return false
 }
 
-func adaptersFileView(pkg *spec.Package, servicex string) (*adaptersFile, []string, error) {
+func adaptersFileView(pkg *spec.Package) (*adaptersFile, []string, error) {
 	if len(pkg.Adapters) == 0 {
 		return nil, nil, nil
 	}
@@ -199,7 +204,7 @@ func adaptersFileView(pkg *spec.Package, servicex string) (*adaptersFile, []stri
 	}
 	im := newImports()
 	im.std("context")
-	im.use(servicex, "servicex")
+	im.use(repoxImport, "repox")
 	f := &adaptersFile{Package: pkg.GoPackage}
 	var warnings []string
 	enumValue := func(v *protogen.EnumValue) string {

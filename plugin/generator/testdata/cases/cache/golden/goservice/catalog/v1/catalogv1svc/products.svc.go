@@ -16,9 +16,9 @@ import (
 	"context"
 
 	"example.com/gen/repository/v1/catalogexample"
-	"example.com/gen/service/servicex"
 	"example.com/test/gen"
 	"github.com/the-protobuf-project/runtime-go/database/repox"
+	"github.com/the-protobuf-project/runtime-go/grpc/servicex"
 )
 
 // ProductsRepositories are the generated repositories ProductsServer
@@ -69,7 +69,7 @@ func NewProductsServer(repos ProductsRepositories, hooks ProductsHooks, opts ...
 	return &ProductsServer{
 		repos: repos,
 		hooks: hooks,
-		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator("catalog.v1")}, opts),
+		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator("catalog.v1").Handle(repox.ReferenceStatus)}, opts),
 	}
 }
 

@@ -15,8 +15,8 @@ package calendarv1svc
 import (
 	"context"
 
-	"example.com/gen/service/servicex"
 	"example.com/test/gen"
+	"github.com/the-protobuf-project/runtime-go/grpc/servicex"
 	"google.golang.org/protobuf/proto"
 )
 

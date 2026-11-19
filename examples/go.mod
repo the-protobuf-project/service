@@ -87,7 +87,7 @@ require (
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
 	github.com/the-protobuf-project/runtime-go/cache v0.0.0-00010101000000-000000000000
-	github.com/the-protobuf-project/runtime-go/database v0.0.0-20261119045748-6f3114a7f8c3
+	github.com/the-protobuf-project/runtime-go/database v0.0.0-20261119080033-a8f090d59b0d
 	github.com/the-protobuf-project/runtime-go/observability v0.0.0-20261021171349-70cd275896ec
 	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261021141431-6d4588022f2b
 	github.com/the-protobuf-project/telemetry/telemetry-go v0.0.0-20261110103606-eda1abc27bf6

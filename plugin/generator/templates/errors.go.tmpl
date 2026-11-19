@@ -52,7 +52,7 @@ func Reasons() []problem.Reason {
 // servicex.WithTranslator, and use it as the interceptor of hand-written
 // services so all of them speak one vocabulary.
 func NewTranslator(kinds ...problem.Kind) *problem.Translator {
-	return servicex.NewTranslator(ErrorDomain, append(kinds, Kinds()...)...).Declare(Reasons()...)
+	return servicex.NewTranslator(ErrorDomain, append(kinds, Kinds()...)...).Declare(Reasons()...){{ if .Store }}.Handle(repox.ReferenceStatus){{ end }}
 }
 
 // Retryable reports whether retrying a call that failed with reason can

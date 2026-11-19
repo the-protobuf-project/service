@@ -15,8 +15,9 @@ package activityv1svc
 import (
 	"context"
 
+	"github.com/the-protobuf-project/runtime-go/database/repox"
+	"github.com/the-protobuf-project/runtime-go/grpc/servicex"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/activity/v1"
-	"github.com/the-protobuf-project/service/examples/generated/service/servicex"
 	"google.golang.org/grpc"
 )
 
@@ -67,7 +68,7 @@ func NewActivityServer(repos ActivityRepositories, hooks ActivityHooks, opts ...
 	return &ActivityServer{
 		repos: repos,
 		hooks: hooks,
-		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator("activity.acme.example")}, opts),
+		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator("activity.acme.example").Handle(repox.ReferenceStatus)}, opts),
 	}
 }
 

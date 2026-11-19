@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 
+	"github.com/the-protobuf-project/runtime-go/grpc/servicex"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/activity/v1"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/booking/v1"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/calendar/v1"
@@ -25,7 +26,6 @@ import (
 	"github.com/the-protobuf-project/service/examples/generated/service/acme/directory/v1/directoryv1svc"
 	"github.com/the-protobuf-project/service/examples/generated/service/app/database"
 	"github.com/the-protobuf-project/service/examples/generated/service/app/server"
-	"github.com/the-protobuf-project/service/examples/generated/service/servicex"
 )
 
 // logic is the business logic acme's custom methods need: the application's

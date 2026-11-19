@@ -16,8 +16,8 @@ import (
 	"context"
 
 	"example.com/gen/repository/v1/idempotencyacmeexample"
-	"example.com/gen/service/servicex"
 	"example.com/test/gen"
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/runtime-go/grpc/idempotency"
 )
 
@@ -44,7 +44,7 @@ func (s *IdempotencyStore) Create(ctx context.Context, k idempotency.Key) error 
 func (s *IdempotencyStore) Get(ctx context.Context, name string) (idempotency.Key, error) {
 	m, err := s.Keys.Get(ctx, name)
 	if err != nil {
-		return idempotency.Key{}, servicex.StoreErr(err, idempotency.ErrNotFound, nil, nil)
+		return idempotency.Key{}, repox.StoreErr(err, idempotency.ErrNotFound, nil, nil)
 	}
 	k := idempotency.Key{
 		Name:       m.GetName(),
@@ -52,7 +52,7 @@ func (s *IdempotencyStore) Get(ctx context.Context, name string) (idempotency.Ke
 		RequestID:  m.GetRequestId(),
 		State:      idempotency.InFlight,
 		Response:   m.GetResponse(),
-		CreateTime: servicex.Time(m.GetCreateTime()),
+		CreateTime: repox.Time(m.GetCreateTime()),
 	}
 	if m.GetState() == idempotencyv1.IdempotencyKey_STATE_DONE {
 		k.State = idempotency.Done

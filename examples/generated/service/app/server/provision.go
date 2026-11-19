@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/the-protobuf-project/runtime-go/grpc"
+	"github.com/the-protobuf-project/runtime-go/grpc/servicex"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/activity/v1"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/booking/v1"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/calendar/v1"
@@ -37,7 +38,6 @@ import (
 	"github.com/the-protobuf-project/service/examples/generated/service/app/config"
 	"github.com/the-protobuf-project/service/examples/generated/service/app/database"
 	"github.com/the-protobuf-project/service/examples/generated/service/app/telemetry"
-	"github.com/the-protobuf-project/service/examples/generated/service/servicex"
 )
 
 // Deps are what business logic is built over: the configuration, the shared

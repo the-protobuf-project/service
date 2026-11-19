@@ -249,6 +249,10 @@ func serviceFileView(pkg *spec.Package, svc *spec.Service, servicex string, stor
 	im := newImports()
 	im.std("context")
 	im.use(servicex, "servicex")
+	if store {
+		// The store model's translator Handles the repositories' reference errors.
+		im.use(repoxImport, "repox")
+	}
 	v := &serviceView{
 		GoName:   svc.GoName,
 		FullName: svc.FullName,

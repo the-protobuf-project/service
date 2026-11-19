@@ -120,7 +120,7 @@ func (t *Target) renderApp(p *protogen.Plugin, model *spec.Model, servicex strin
 	}
 	v.StandardReasons = standardReasons
 	for _, pkg := range model.Packages {
-		doc, err := errorsFileView(pkg, servicex)
+		doc, err := errorsFileView(pkg, servicex, true)
 		if err != nil {
 			return err
 		}
@@ -179,6 +179,7 @@ func (t *Target) renderApp(p *protogen.Plugin, model *spec.Model, servicex strin
 		{path: "app/server/translator.go", tmpl: "app_translator.go.tmpl", imports: func(v *appView, im *imports) {
 			im.std("context")
 			im.use(servicex, "servicex")
+			im.use(repoxImport, "repox")
 			im.use(v.Telemetry, "telemetry")
 			im.use("github.com/the-protobuf-project/runtime-go/grpc", "grpc")
 			im.use("github.com/the-protobuf-project/runtime-go/grpc/problem", "problem")
@@ -507,6 +508,10 @@ func serviceOf(model *spec.Model, sv *appService) *spec.Service {
 // repoxImport is the runtime the generated repositories build on: runtime-go's
 // database/repox (store v1.9.0 and later; before, each project generated its own).
 const repoxImport = "github.com/the-protobuf-project/runtime-go/database/repox"
+
+// servicexImport is the runtime the generated servers build on: runtime-go's
+// grpc/servicex (service v0.4.2 and later; before, each run generated its own).
+const servicexImport = "github.com/the-protobuf-project/runtime-go/grpc/servicex"
 
 func repoxOfModule(string) string { return repoxImport }
 

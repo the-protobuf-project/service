@@ -11,10 +11,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
+	"github.com/the-protobuf-project/runtime-go/grpc/servicex"
 	"github.com/the-protobuf-project/service/examples/generated/go/acme/directory/v1"
 	"github.com/the-protobuf-project/service/examples/generated/repository/acme/directory"
 	"github.com/the-protobuf-project/service/examples/generated/service/acme/directory/v1/directoryv1svc"
-	"github.com/the-protobuf-project/service/examples/generated/service/servicex"
 )
 
 func organizations(t *testing.T) *directoryv1svc.OrganizationsServer {

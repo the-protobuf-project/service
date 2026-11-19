@@ -16,9 +16,9 @@ import (
 	"context"
 
 	"example.com/gen/repository/v1/bookingacmeexample"
-	"example.com/gen/service/servicex"
 	"example.com/test/gen"
 	"github.com/the-protobuf-project/runtime-go/database/repox"
+	"github.com/the-protobuf-project/runtime-go/grpc/servicex"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -96,7 +96,7 @@ func NewHoldsServer(repos HoldsRepositories, hooks HoldsHooks, opts ...servicex.
 	return &HoldsServer{
 		repos: repos,
 		hooks: hooks,
-		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator("booking.acme.example")}, opts),
+		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator("booking.acme.example").Handle(repox.ReferenceStatus)}, opts),
 	}
 }
 

@@ -16,9 +16,9 @@ import (
 	"context"
 
 	"example.com/gen/repository/v1/calendaracmeexample"
-	"example.com/gen/service/servicex"
 	"example.com/test/gen"
 	"github.com/the-protobuf-project/runtime-go/database/repox"
+	"github.com/the-protobuf-project/runtime-go/grpc/servicex"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -126,7 +126,7 @@ func NewEventsServer(repos EventsRepositories, hooks EventsHooks, opts ...servic
 	return &EventsServer{
 		repos: repos,
 		hooks: hooks,
-		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator("calendar.acme.example")}, opts),
+		opts:  servicex.Apply(servicex.Options{Translator: servicex.NewTranslator("calendar.acme.example").Handle(repox.ReferenceStatus)}, opts),
 	}
 }
 

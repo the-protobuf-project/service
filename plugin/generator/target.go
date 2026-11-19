@@ -145,31 +145,9 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 		return nil
 	}
 	indexPackages(p)
-	servicex := path.Join(s.GoModule, "servicex")
-	runtime := map[string]any{
-		"Banner":      banner(p, t.Versions, nil, "Shared runtime of the generated AIP standard-method servers."),
-		"RepoxImport": repoxImport,
-		"Store":       s.Store,
-		"Repox":       map[bool]string{true: "repox.", false: ""}[s.Store],
-	}
-	if err := render(p, "servicex/servicex.go", "servicex.go.tmpl", runtime); err != nil {
-		return err
-	}
-	if s.Store {
-		if err := render(p, "servicex/events.go", "events.go.tmpl", runtime); err != nil {
-			return err
-		}
-	} else {
-		runtime["Banner"] = banner(p, t.Versions, nil, "Shared runtime of the generated handler-model servers.")
-		if err := render(p, "servicex/handlers.go", "handlers_runtime.go.tmpl", runtime); err != nil {
-			return err
-		}
-	}
-	if err := renderText(p, "servicex/errors.svc.md", "errors.md.tmpl", map[string]any{
-		"Domain": "", "Proto": "servicex", "Reasons": standardReasons,
-	}); err != nil {
-		return err
-	}
+	// The servers build on runtime-go's grpc/servicex; nothing of it is
+	// generated any more.
+	servicex := servicexImport
 	for _, pkg := range model.Packages {
 		sources := packageSources(pkg)
 		for _, svc := range pkg.Services {
@@ -271,7 +249,7 @@ func (t *Target) extras(p *protogen.Plugin, pkg *spec.Package, servicex string, 
 		}
 		pkg = &spec.Package{ProtoPackage: pkg.ProtoPackage, Dir: pkg.Dir, GoPackage: pkg.GoPackage, Services: pkg.Services, Errors: pkg.Errors}
 	}
-	feeds, err := feedsFileView(pkg, servicex)
+	feeds, err := feedsFileView(pkg)
 	if err != nil {
 		return err
 	}
@@ -281,7 +259,7 @@ func (t *Target) extras(p *protogen.Plugin, pkg *spec.Package, servicex string, 
 			return err
 		}
 	}
-	errs, err := errorsFileView(pkg, servicex)
+	errs, err := errorsFileView(pkg, servicex, t.Settings.Store)
 	if err != nil {
 		return err
 	}
@@ -294,7 +272,7 @@ func (t *Target) extras(p *protogen.Plugin, pkg *spec.Package, servicex string, 
 			return err
 		}
 	}
-	ad, warnings, err := adaptersFileView(pkg, servicex)
+	ad, warnings, err := adaptersFileView(pkg)
 	if err != nil {
 		return err
 	}

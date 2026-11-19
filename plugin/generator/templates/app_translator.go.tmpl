@@ -42,7 +42,7 @@ func Reasons() []problem.Reason {
 // Translator is the problem.Translator of a server whose ErrorInfo domain is
 // domain: the generated servers' reasons and every package's.
 func Translator(domain string) *problem.Translator {
-	return servicex.NewTranslator(domain, Kinds()...).Declare(Reasons()...)
+	return servicex.NewTranslator(domain, Kinds()...).Declare(Reasons()...).Handle(repox.ReferenceStatus)
 }
 
 // ServerOptions are the options every generated server takes: the translator
