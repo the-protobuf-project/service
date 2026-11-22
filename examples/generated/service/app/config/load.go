@@ -140,6 +140,9 @@ func validate(cfg *AppConfig) error {
 	if m := cfg.Database.Postgres.PlanCacheMode; m != "" && !slices.Contains(PlanCacheModes, m) {
 		return fmt.Errorf("config invalid: database.postgres.plan_cache_mode=%q (want %s)", m, strings.Join(PlanCacheModes, "|"))
 	}
+	if err := validateCache(cfg); err != nil {
+		return err
+	}
 	if cfg.Server.ShutdownTimeoutSeconds < 0 {
 		return fmt.Errorf("config invalid: server.shutdown_timeout_seconds=%d (want 0 for the default, or more)", cfg.Server.ShutdownTimeoutSeconds)
 	}
@@ -161,6 +164,34 @@ func validate(cfg *AppConfig) error {
 	}
 	if cfg.Server.ExperimentalHTTP3 && !cfg.Server.TLS.Enabled() {
 		return errors.New("config invalid: server.experimental_http3 requires server.tls.cert_file and server.tls.key_file")
+	}
+	return nil
+}
+
+// validateCache checks [cache] and [cdn]: a known backend, and what the
+// enabled ones need to connect. A secret left blank is reported by name, since
+// it is the one key the release file leaves for the deployment to set.
+func validateCache(cfg *AppConfig) error {
+	c := cfg.Cache
+	if c.Backend != "" && !slices.Contains(CacheBackends, c.Backend) {
+		return fmt.Errorf("config invalid: cache.backend=%q (want %s)", c.Backend, strings.Join(CacheBackends, "|"))
+	}
+	if c.Enabled && c.Backend == CacheWorkersKV {
+		kv := c.WorkersKV
+		if kv.AccountID == "" || kv.NamespaceID == "" {
+			return errors.New("config invalid: cache.backend=workerskv requires cache.workerskv.account_id and cache.workerskv.namespace_id")
+		}
+		if kv.APIToken == "" {
+			return fmt.Errorf("config invalid: cache.backend=workerskv requires cache.workerskv.api_token; set %sCACHE__WORKERSKV__API_TOKEN", EnvPrefix)
+		}
+	}
+	if d := cfg.CDN; d.Enabled {
+		if d.ZoneID == "" {
+			return errors.New("config invalid: cdn.enabled requires cdn.zone_id")
+		}
+		if d.APIToken == "" {
+			return fmt.Errorf("config invalid: cdn.enabled requires cdn.api_token; set %sCDN__API_TOKEN", EnvPrefix)
+		}
 	}
 	return nil
 }

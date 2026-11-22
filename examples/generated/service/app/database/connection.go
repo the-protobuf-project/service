@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	"github.com/the-protobuf-project/runtime-go/cache"
+	"github.com/the-protobuf-project/runtime-go/cache/cdn"
 	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"github.com/the-protobuf-project/service/examples/generated/service/app/config"
 	"gorm.io/gorm"
@@ -46,6 +47,8 @@ type Connection struct {
 	observers observerList
 	// cacheProvider is the cache OpenCache opened, nil when it is off.
 	cacheProvider cache.Provider
+	// cdn purges the CDN's cache of the configured zone, nil when [cdn] is off.
+	cdn *cdn.Purger
 }
 
 // observerList is the observers Observe added, safe to read while one is
@@ -65,6 +68,11 @@ func (c *Connection) Observe(o repox.ChangeObserver) {
 
 // CacheProvider is the cache the connection opened, nil when [cache] is off.
 func (c *Connection) CacheProvider() cache.Provider { return c.cacheProvider }
+
+// CDN purges what Cloudflare's CDN has cached for the configured zone, by URL,
+// cache tag, host or prefix; nil when [cdn] is off. Purge after a write commits,
+// so the next visitor's request reaches the origin and sees it.
+func (c *Connection) CDN() *cdn.Purger { return c.cdn }
 
 // changes is the connection's fan-out of one write to Changes and every
 // observer.

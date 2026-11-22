@@ -413,32 +413,58 @@ pub async fn open_database(cfg: &config::DatabaseConfig) -> Result<::database::r
     Ok(::database::orm::driver(pool))
 }
 
-/// Opens the cache [cache] configures, or None when it is off: a Redis (or
-/// Dragonfly) client at cache.address, keys under cache.prefix, the
-/// cache.database namespace selected.
+/// Opens the cache [cache] configures, or None when it is off: keys under
+/// cache.prefix, the cache.database namespace selected, on cache.backend's
+/// server. "redis" (the default) is a Redis or Dragonfly client at
+/// cache.address; "workerskv" is the Cloudflare Workers KV namespace
+/// [cache.workerskv] names.
 pub async fn open_cache(cfg: &config::CacheConfig) -> Result<Option<Arc<::cache::DB>>, Error> {
-    use ::cache::Provider as _;
     if !cfg.enabled {
         return Ok(None);
     }
-    let client =
-        ::cache::drivers::redis::RedisClient::connect(::cache::drivers::redis::RedisConfig {
-            address: cfg.address.clone(),
-            ..Default::default()
-        })
-        .await
-        .map_err(|e| Error::Open(format!("cache: {e}")))?;
-    let provider = ::cache::drivers::redis::RedisProvider::new(
-        Arc::new(client),
-        ::cache::Config {
-            prefix: cfg.prefix.clone(),
-            ..Default::default()
-        },
-    );
-    let db = provider
-        .set_database(&cfg.database)
-        .await
-        .map_err(|e| Error::Open(format!("cache: {e}")))?;
+    let open = |e: ::cache::CacheError| Error::Open(format!("cache: {e}"));
+    let policy = ::cache::Config {
+        prefix: cfg.prefix.clone(),
+        ..Default::default()
+    };
+    let provider: Box<dyn ::cache::Provider> = match cfg.backend.as_str() {
+        "workerskv" => {
+            use ::cache::drivers::workerskv::{self as kv, cloudflare::framework};
+            let sdk = framework::client::async_api::Client::new(
+                framework::auth::Credentials::UserAuthToken {
+                    token: cfg.workerskv.api_token.clone(),
+                },
+                framework::client::ClientConfig::default(),
+                framework::Environment::Production,
+            )
+            .map_err(|e| Error::Open(format!("cache: {e}")))?;
+            let client = kv::WorkersKvClient::connect(
+                Arc::new(sdk),
+                kv::WorkersKvConfig {
+                    account_id: cfg.workerskv.account_id.clone(),
+                    namespace_id: cfg.workerskv.namespace_id.clone(),
+                },
+            )
+            .await
+            .map_err(open)?;
+            Box::new(kv::WorkersKvProvider::new(Arc::new(client), policy))
+        }
+        _ => {
+            let client = ::cache::drivers::redis::RedisClient::connect(
+                ::cache::drivers::redis::RedisConfig {
+                    address: cfg.address.clone(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(open)?;
+            Box::new(::cache::drivers::redis::RedisProvider::new(
+                Arc::new(client),
+                policy,
+            ))
+        }
+    };
+    let db = provider.set_database(&cfg.database).await.map_err(open)?;
     Ok(Some(Arc::new(db)))
 }
 

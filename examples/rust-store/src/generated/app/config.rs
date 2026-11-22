@@ -65,13 +65,20 @@ pub struct DatabaseConfig {
     pub max_connections: u32,
 }
 
-/// The cache (cache=true): Redis or Dragonfly, off unless enabled.
+/// The cache (cache=true), off unless enabled: "redis" (Redis or Dragonfly)
+/// or "workerskv" (Cloudflare Workers KV).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct CacheConfig {
     /// Turns the cache on.
     #[serde(default)]
     pub enabled: bool,
-    /// host:port of the server.
+    /// The server: "redis" (the default) or "workerskv".
+    #[serde(default)]
+    pub backend: String,
+    /// The Workers KV namespace, when backend is "workerskv".
+    #[serde(default)]
+    pub workerskv: WorkersKvConfig,
+    /// host:port of the Redis server.
     #[serde(default)]
     pub address: String,
     /// The deployment's key prefix.
@@ -80,6 +87,21 @@ pub struct CacheConfig {
     /// The cache database (key namespace) selected.
     #[serde(default)]
     pub database: String,
+}
+
+/// A Cloudflare Workers KV namespace: eventually consistent, with no
+/// conditional writes, and a lease under 60s becomes 60s.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct WorkersKvConfig {
+    /// The account that owns the namespace.
+    #[serde(default)]
+    pub account_id: String,
+    /// The namespace the cache reads and writes.
+    #[serde(default)]
+    pub namespace_id: String,
+    /// Needs Workers KV Storage read and write. A secret.
+    #[serde(default)]
+    pub api_token: String,
 }
 
 /// Service identity.
@@ -234,8 +256,23 @@ impl ::config::Validate for AppConfig {
         if self.database.url.is_empty() {
             return Err("database.url is required".into());
         }
-        if self.cache.enabled && self.cache.address.is_empty() {
-            return Err("cache.enabled requires cache.address".into());
+        match self.cache.backend.as_str() {
+            "" | "redis" => {
+                if self.cache.enabled && self.cache.address.is_empty() {
+                    return Err("cache.enabled requires cache.address".into());
+                }
+            }
+            "workerskv" => {
+                let kv = &self.cache.workerskv;
+                if self.cache.enabled
+                    && (kv.account_id.is_empty()
+                        || kv.namespace_id.is_empty()
+                        || kv.api_token.is_empty())
+                {
+                    return Err("cache.backend=workerskv requires cache.workerskv.account_id, namespace_id and api_token".into());
+                }
+            }
+            other => return Err(format!("cache.backend={other:?} (want redis|workerskv)")),
         }
         let srv = &self.server;
         if self.app.name.is_empty() || self.app.version.is_empty() {

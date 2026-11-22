@@ -54,6 +54,9 @@ type AppConfig struct {
 	// Cache holds the cache backend business logic reads through. Off by
 	// default: the service is correct without it.
 	Cache CacheConfig `koanf:"cache"`
+	// CDN purges what Cloudflare's CDN has cached for the service's zone. Off
+	// by default.
+	CDN CDNConfig `koanf:"cdn"`
 	// Webhooks tunes delivery of the change feeds.
 	Webhooks WebhooksConfig `koanf:"webhooks"`
 	// Retention decides how long soft-deleted records are kept.
@@ -283,13 +286,30 @@ func (p PostgresConfig) URL(dbname string) string {
 	return u.String()
 }
 
-// CacheConfig is the cache backend: Redis or Dragonfly, which speak one
-// protocol. Which server is deployment policy, so it lives here, never in a
-// proto.
+// The cache backends [cache] may name.
+const (
+	// CacheRedis is Redis or Dragonfly, which speak one protocol. The default.
+	CacheRedis = "redis"
+	// CacheWorkersKV is Cloudflare Workers KV: eventually consistent, with no
+	// conditional writes, so a resource cached as INDEXED or DOCUMENT is refused
+	// at startup.
+	CacheWorkersKV = "workerskv"
+)
+
+// CacheBackends are the accepted CacheConfig.Backend values ("" means the
+// first).
+var CacheBackends = []string{CacheRedis, CacheWorkersKV}
+
+// CacheConfig is the cache backend. Which server is deployment policy, so it
+// lives here, never in a proto.
 type CacheConfig struct {
 	// Enabled turns the cache on. Off, Deps.Cache is nil.
 	Enabled bool `koanf:"enabled"`
-	// Address is the server, host:port.
+	// Backend is the server: "redis" (the default) or "workerskv".
+	Backend string `koanf:"backend"`
+	// WorkersKV is the namespace when Backend is "workerskv".
+	WorkersKV WorkersKVConfig `koanf:"workerskv"`
+	// Address is the Redis server, host:port.
 	Address string `koanf:"address"`
 	// Username and Password authenticate, when the server asks.
 	Username string `koanf:"username"`
@@ -301,6 +321,26 @@ type CacheConfig struct {
 	// Prefix namespaces every key, separating this deployment's entries from
 	// another's sharing one server.
 	Prefix string `koanf:"prefix"`
+}
+
+// WorkersKVConfig is a Cloudflare Workers KV namespace.
+type WorkersKVConfig struct {
+	// AccountID owns the namespace.
+	AccountID string `koanf:"account_id"`
+	// NamespaceID is the namespace the cache reads and writes.
+	NamespaceID string `koanf:"namespace_id"`
+	// APIToken needs Workers KV Storage read and write. A secret.
+	APIToken string `koanf:"api_token"`
+}
+
+// CDNConfig is the Cloudflare zone whose CDN cache business logic purges.
+type CDNConfig struct {
+	// Enabled opens the purger. Off, Connection.CDN is nil.
+	Enabled bool `koanf:"enabled"`
+	// ZoneID is the zone purged.
+	ZoneID string `koanf:"zone_id"`
+	// APIToken needs Cache Purge on the zone. A secret.
+	APIToken string `koanf:"api_token"`
 }
 
 // WebhooksConfig tunes webhook delivery: whether this server sends what the

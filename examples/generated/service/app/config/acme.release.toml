@@ -81,10 +81,12 @@ conn_max_lifetime_minutes = 30
 conn_max_idle_minutes = 5
 plan_cache_mode = "force_custom_plan"
 
-# The cache business logic reads through (Deps.Cache): Redis or Dragonfly.
+# The cache business logic reads through (Deps.Cache): "redis" (Redis or
+# Dragonfly) or "workerskv" (Cloudflare Workers KV, [cache.workerskv]).
 # Off by default; the service is correct without it.
 [cache]
 enabled = false
+backend = "redis"
 address = "127.0.0.1:6379"
 username = ""
 password = ""
@@ -92,6 +94,21 @@ database = 0
 pool_size = 0
 # Separates this deployment's keys from another sharing one server.
 prefix = "acme"
+
+# Workers KV, when cache.backend = "workerskv". Eventually consistent, and a
+# lease under 60s becomes 60s. Set ACME_CACHE__WORKERSKV__API_TOKEN at
+# deploy time.
+[cache.workerskv]
+account_id = ""
+namespace_id = ""
+api_token = ""
+
+# Purges Cloudflare's CDN cache for a zone (Connection.CDN). Off by default.
+# Set ACME_CDN__API_TOKEN at deploy time.
+[cdn]
+enabled = false
+zone_id = ""
+api_token = ""
 
 [webhooks]
 # Webhook delivery of the change feeds. Endpoints must be public.

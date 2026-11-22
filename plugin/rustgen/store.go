@@ -106,31 +106,53 @@ pub async fn open_database(cfg: &config::DatabaseConfig) -> Result<::database::r
 `, t.Settings.Database, sqlxPool[t.Settings.Database])
 	if t.Settings.Cache {
 		b.WriteString(`
-/// Opens the cache [cache] configures, or None when it is off: a Redis (or
-/// Dragonfly) client at cache.address, keys under cache.prefix, the
-/// cache.database namespace selected.
+/// Opens the cache [cache] configures, or None when it is off: keys under
+/// cache.prefix, the cache.database namespace selected, on cache.backend's
+/// server. "redis" (the default) is a Redis or Dragonfly client at
+/// cache.address; "workerskv" is the Cloudflare Workers KV namespace
+/// [cache.workerskv] names.
 pub async fn open_cache(cfg: &config::CacheConfig) -> Result<Option<Arc<::cache::DB>>, Error> {
-    use ::cache::Provider as _;
     if !cfg.enabled {
         return Ok(None);
     }
-    let client = ::cache::drivers::redis::RedisClient::connect(::cache::drivers::redis::RedisConfig {
-        address: cfg.address.clone(),
+    let open = |e: ::cache::CacheError| Error::Open(format!("cache: {e}"));
+    let policy = ::cache::Config {
+        prefix: cfg.prefix.clone(),
         ..Default::default()
-    })
-    .await
-    .map_err(|e| Error::Open(format!("cache: {e}")))?;
-    let provider = ::cache::drivers::redis::RedisProvider::new(
-        Arc::new(client),
-        ::cache::Config {
-            prefix: cfg.prefix.clone(),
-            ..Default::default()
-        },
-    );
-    let db = provider
-        .set_database(&cfg.database)
-        .await
-        .map_err(|e| Error::Open(format!("cache: {e}")))?;
+    };
+    let provider: Box<dyn ::cache::Provider> = match cfg.backend.as_str() {
+        "workerskv" => {
+            use ::cache::drivers::workerskv::{self as kv, cloudflare::framework};
+            let sdk = framework::client::async_api::Client::new(
+                framework::auth::Credentials::UserAuthToken {
+                    token: cfg.workerskv.api_token.clone(),
+                },
+                framework::client::ClientConfig::default(),
+                framework::Environment::Production,
+            )
+            .map_err(|e| Error::Open(format!("cache: {e}")))?;
+            let client = kv::WorkersKvClient::connect(
+                Arc::new(sdk),
+                kv::WorkersKvConfig {
+                    account_id: cfg.workerskv.account_id.clone(),
+                    namespace_id: cfg.workerskv.namespace_id.clone(),
+                },
+            )
+            .await
+            .map_err(open)?;
+            Box::new(kv::WorkersKvProvider::new(Arc::new(client), policy))
+        }
+        _ => {
+            let client = ::cache::drivers::redis::RedisClient::connect(::cache::drivers::redis::RedisConfig {
+                address: cfg.address.clone(),
+                ..Default::default()
+            })
+            .await
+            .map_err(open)?;
+            Box::new(::cache::drivers::redis::RedisProvider::new(Arc::new(client), policy))
+        }
+    };
+    let db = provider.set_database(&cfg.database).await.map_err(open)?;
     Ok(Some(Arc::new(db)))
 }
 
@@ -195,13 +217,20 @@ pub struct DatabaseConfig {
 	if t.Settings.Cache {
 		sections += "    /// The cache the repositories read through (cache=true).\n    #[serde(default)]\n    pub cache: CacheConfig,\n"
 		types += `
-/// The cache (cache=true): Redis or Dragonfly, off unless enabled.
+/// The cache (cache=true), off unless enabled: "redis" (Redis or Dragonfly)
+/// or "workerskv" (Cloudflare Workers KV).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct CacheConfig {
     /// Turns the cache on.
     #[serde(default)]
     pub enabled: bool,
-    /// host:port of the server.
+    /// The server: "redis" (the default) or "workerskv".
+    #[serde(default)]
+    pub backend: String,
+    /// The Workers KV namespace, when backend is "workerskv".
+    #[serde(default)]
+    pub workerskv: WorkersKvConfig,
+    /// host:port of the Redis server.
     #[serde(default)]
     pub address: String,
     /// The deployment's key prefix.
@@ -211,9 +240,39 @@ pub struct CacheConfig {
     #[serde(default)]
     pub database: String,
 }
+
+/// A Cloudflare Workers KV namespace: eventually consistent, with no
+/// conditional writes, and a lease under 60s becomes 60s.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct WorkersKvConfig {
+    /// The account that owns the namespace.
+    #[serde(default)]
+    pub account_id: String,
+    /// The namespace the cache reads and writes.
+    #[serde(default)]
+    pub namespace_id: String,
+    /// Needs Workers KV Storage read and write. A secret.
+    #[serde(default)]
+    pub api_token: String,
+}
 `
-		validate += "        if self.cache.enabled && self.cache.address.is_empty() {\n            return Err(\"cache.enabled requires cache.address\".into());\n        }\n"
-		releaseTOML += "\n[cache]\nenabled = false\naddress = \"localhost:6379\"\nprefix = \"" + name + "\"\ndatabase = \"\"\n"
+		validate += `        match self.cache.backend.as_str() {
+            "" | "redis" => {
+                if self.cache.enabled && self.cache.address.is_empty() {
+                    return Err("cache.enabled requires cache.address".into());
+                }
+            }
+            "workerskv" => {
+                let kv = &self.cache.workerskv;
+                if self.cache.enabled && (kv.account_id.is_empty() || kv.namespace_id.is_empty() || kv.api_token.is_empty()) {
+                    return Err("cache.backend=workerskv requires cache.workerskv.account_id, namespace_id and api_token".into());
+                }
+            }
+            other => return Err(format!("cache.backend={other:?} (want redis|workerskv)")),
+        }
+`
+		releaseTOML += "\n[cache]\nenabled = false\nbackend = \"redis\"\naddress = \"localhost:6379\"\nprefix = \"" + name + "\"\ndatabase = \"\"\n" +
+			"\n# Workers KV, when cache.backend = \"workerskv\". Secret: set " + envPrefix(name) + "CACHE__WORKERSKV__API_TOKEN at deploy time.\n[cache.workerskv]\naccount_id = \"\"\nnamespace_id = \"\"\napi_token = \"\"\n"
 	}
 	config = strings.Replace(config, "    /// The hybrid server.\n    pub server: ServerConfig,\n}\n", "    /// The hybrid server.\n    pub server: ServerConfig,\n"+sections+"}\n"+types, 1)
 	config = strings.Replace(config, "        let srv = &self.server;\n        if self.app.name.is_empty()", validate+"        let srv = &self.server;\n        if self.app.name.is_empty()", 1)
