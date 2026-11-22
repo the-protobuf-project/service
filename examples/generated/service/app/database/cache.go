@@ -4,7 +4,7 @@
 // 	protoc (unknown)
 // source: acme/activity/v1/activity.proto, acme/booking/v1/booking.proto, acme/calendar/v1/calendar.proto, acme/directory/v1/directory.proto, acme/idempotency/v1/idempotency.proto, acme/webhook/v1/webhook.proto
 //
-// Application shell of acme: the cache provider.
+// Application shell of acme: the cache provider and the CDN purger.
 // annotations: entity.v1 v1.8.0, service.v1 dev
 // engine:      protokit v1.4.0
 //
@@ -16,8 +16,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/cloudflare/cloudflare-go/v7"
+	"github.com/cloudflare/cloudflare-go/v7/option"
 	"github.com/the-protobuf-project/runtime-go/cache"
+	"github.com/the-protobuf-project/runtime-go/cache/cdn"
 	"github.com/the-protobuf-project/runtime-go/cache/redis"
+	"github.com/the-protobuf-project/runtime-go/cache/workerskv"
 	"github.com/the-protobuf-project/service/examples/generated/service/app/config"
 	"github.com/the-protobuf-project/service/examples/generated/service/app/telemetry"
 )
@@ -39,11 +43,29 @@ func (c *Connection) attachCache(ctx context.Context) {
 //
 // The backend lives here rather than in the protos on purpose: which server
 // serves a cache is deployment policy. Redis and Dragonfly are the same
-// driver behind RESP, so `address` may point at either.
+// driver behind RESP, so `address` may point at either; Workers KV is the
+// namespace [cache.workerskv] names.
+//
+// DefaultTTL is left zero on every backend: each cached entry names its own
+// ttl, and RequireTTL turns a forgotten one into an error at the first write
+// instead of an entry that never expires.
 func OpenCache(ctx context.Context) (cache.Provider, error) {
 	cfg := config.Get().Cache
 	if !cfg.Enabled {
 		return nil, nil
+	}
+	policy := cache.Config{Prefix: cfg.Prefix, RequireTTL: true}
+	if cfg.Backend == config.CacheWorkersKV {
+		kv := cfg.WorkersKV
+		client, err := workerskv.NewClient(ctx, workerskv.Config{
+			Client:      cloudflare.NewClient(option.WithAPIToken(kv.APIToken)),
+			AccountID:   kv.AccountID,
+			NamespaceID: kv.NamespaceID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("open cache workers kv %q: %w", kv.NamespaceID, err)
+		}
+		return workerskv.New(client, policy), nil
 	}
 	client, err := redis.NewClient(ctx, redis.Config{
 		Address:  cfg.Address,
@@ -55,11 +77,16 @@ func OpenCache(ctx context.Context) (cache.Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open cache redis %q: %w", cfg.Address, err)
 	}
-	// DefaultTTL is left zero: every cached entry names its own ttl, and
-	// RequireTTL turns a forgotten one into an error at the first write
-	// instead of an entry that never expires.
-	return redis.New(client, cache.Config{
-		Prefix:     cfg.Prefix,
-		RequireTTL: true,
-	}), nil
+	return redis.New(client, policy), nil
+}
+
+// attachCDN opens the CDN purger when [cdn] is enabled. Opening sends nothing,
+// so it cannot fail on a reachable network; a purge that fails reports to the
+// caller that asked for it.
+func (c *Connection) attachCDN() {
+	cfg := config.Get().CDN
+	if !cfg.Enabled {
+		return
+	}
+	c.cdn = cdn.NewPurger(cloudflare.NewClient(option.WithAPIToken(cfg.APIToken)), cfg.ZoneID)
 }

@@ -584,7 +584,7 @@ for each piece and wires whatever fills it.
 
 | Package | What |
 |---|---|
-| `app/config` | `AppConfig` with only the sections the run uses (`[server]`, `[database.postgres]`, `[cache]`, `[webhooks]` with a webhook store, `[retention]` with soft-deletable resources), validated; the embedded `<name>.release.toml`, the `<name>.dev.toml` profile (from the working directory, or embedded with `<NAME>_PROFILE=dev`), then `<NAME>_SECTION__KEY` environment variables; `Layers` and `Section` for the application's own sections. |
+| `app/config` | `AppConfig` with only the sections the run uses (`[server]`, `[database.postgres]`, `[cache]`, `[cdn]`, `[webhooks]` with a webhook store, `[retention]` with soft-deletable resources), validated; the embedded `<name>.release.toml`, the `<name>.dev.toml` profile (from the working directory, or embedded with `<NAME>_PROFILE=dev`), then `<NAME>_SECTION__KEY` environment variables; `Layers` and `Section` for the application's own sections. |
 | `app/telemetry` | The process pipeline (OTLP from `<NAME>_OTLP_ENDPOINT`), the logging helpers, `Meter`. |
 | `app/database` | The shared `Connection`: Postgres with pool bounds, error translation and a quiet logger, the pool monitor, the cache provider, and `Observe` for anything that must hear every write. |
 | `app/server` | `Repositories` (every repository of the run on one connection); `Translator`/`ServerOptions` (every package's error kinds, each server keeping its own domain, and the tracer); `New` (every server, with what the `Provision` gives); `Interceptors` (hints, then idempotency with an idempotency-key store); `Options`/`Register` (every package's `RegisterAll`); the hybrid server with TLS, CORS, MCP and shutdown from config; background work (webhook delivery, the soft-delete purger, the pool monitor); `NewGRPCServer` for a bufconn test. |
@@ -755,8 +755,17 @@ protos.
   is logged and left off. Record caches decorate the GORM stores under a
   repository and are scoped by a tenant only the deployment knows: wire them
   with the repository package's `With<Model>Store`.
-- **Rust:** the app shell adds `[cache]` (`enabled`, `address`, `prefix`,
-  `database`; Redis or Dragonfly through `tpp-cache`) and
+  `cache.backend` picks the server: `redis` (the default; Redis or Dragonfly
+  at `address`) or `workerskv` (Cloudflare Workers KV, the namespace
+  `[cache.workerskv]` names, its `api_token` set through
+  `<NAME>_CACHE__WORKERSKV__API_TOKEN`). Workers KV has no server-side sets,
+  so a resource cached as `INDEXED` or `DOCUMENT` is refused when it opens.
+  `[cdn]` (`enabled`, `zone_id`, `api_token`) opens a Cloudflare CDN purger
+  that business logic reaches as `Connection.CDN()`, to purge a zone by URL,
+  cache tag, host or prefix after a write commits.
+- **Rust:** the app shell adds `[cache]` (`enabled`, `backend`, `address`,
+  `prefix`, `database`, and `[cache.workerskv]`; Redis, Dragonfly or Workers
+  KV through `tpp-cache`) and
   `app::cache_repositories(repos, Arc<cache::DB>)`, which passes every
   package with `cache.v1` annotations through
   `<rust_repository_module>::<package>::cache::cache_repositories`, the

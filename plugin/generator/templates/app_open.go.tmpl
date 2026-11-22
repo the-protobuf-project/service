@@ -9,7 +9,7 @@ import (
 )
 
 // Open connects to the configured Postgres, bounds its pool, and opens the
-// cache when [cache] is enabled.
+// cache when [cache] is enabled and the CDN purger when [cdn] is.
 func Open() (*Connection, error) {
 	pg := config.Get().Database.Postgres
 	db, err := OpenGorm(pg.DSN(), &gorm.Config{})
@@ -21,6 +21,7 @@ func Open() (*Connection, error) {
 	}
 	conn := &Connection{PgSQLConn: db}
 	conn.attachCache(context.Background())
+	conn.attachCDN()
 	return conn, nil
 }
 

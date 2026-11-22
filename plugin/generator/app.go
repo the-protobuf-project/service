@@ -148,6 +148,7 @@ func (t *Target) renderApp(p *protogen.Plugin, model *spec.Model, servicex strin
 			im.use(v.Config, "config")
 			im.use(repoxOfModule(t.Settings.RepositoryModule), "repox")
 			im.use("github.com/the-protobuf-project/runtime-go/cache", "cache")
+			im.use("github.com/the-protobuf-project/runtime-go/cache/cdn", "cdn")
 			im.use("gorm.io/gorm", "gorm")
 		}},
 		{path: "app/database/open.go", tmpl: "app_open.go.tmpl", imports: func(v *appView, im *imports) {
@@ -168,7 +169,11 @@ func (t *Target) renderApp(p *protogen.Plugin, model *spec.Model, servicex strin
 			im.use(v.Config, "config")
 			im.use(v.Telemetry, "telemetry")
 			im.use("github.com/the-protobuf-project/runtime-go/cache", "cache")
+			im.use("github.com/the-protobuf-project/runtime-go/cache/cdn", "cdn")
 			im.use("github.com/the-protobuf-project/runtime-go/cache/redis", "redis")
+			im.use("github.com/the-protobuf-project/runtime-go/cache/workerskv", "workerskv")
+			im.use("github.com/cloudflare/cloudflare-go/v7", "cloudflare")
+			im.use("github.com/cloudflare/cloudflare-go/v7/option", "option")
 		}},
 		{path: "app/server/repositories.go", tmpl: "app_repositories.go.tmpl", imports: func(v *appView, im *imports) {
 			im.use(repoxOfModule(t.Settings.RepositoryModule), "repox")
@@ -318,7 +323,7 @@ var appNotes = map[string]string{
 	"app_translate.go.tmpl":    "Postgres errors as GORM sentinels",
 	"app_logger.go.tmpl":       "the GORM logger, quiet about outcomes the repositories expect",
 	"app_pool.go.tmpl":         "the connection pool's health in telemetry",
-	"app_cache.go.tmpl":        "the cache provider",
+	"app_cache.go.tmpl":        "the cache provider and the CDN purger",
 	"app_repositories.go.tmpl": "every repository of the run, on one connection",
 	"app_translator.go.tmpl":   "the error translator and tracer every server shares",
 	"app_provision.go.tmpl":    "what an application provisions: hooks, logic, overrides and extensions",

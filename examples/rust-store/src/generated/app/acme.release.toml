@@ -61,6 +61,13 @@ max_connections = 10
 
 [cache]
 enabled = false
+backend = "redis"
 address = "localhost:6379"
 prefix = "acme"
 database = ""
+
+# Workers KV, when cache.backend = "workerskv". Secret: set ACME_CACHE__WORKERSKV__API_TOKEN at deploy time.
+[cache.workerskv]
+account_id = ""
+namespace_id = ""
+api_token = ""

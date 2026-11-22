@@ -24,6 +24,7 @@ sslmode = "disable"
 
 [cache]
 enabled = false
+backend = "redis"
 address = "127.0.0.1:6379"
 prefix = "{{ .Name }}-dev"
 {{- if .Webhooks }}
