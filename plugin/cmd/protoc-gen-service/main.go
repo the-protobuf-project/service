@@ -98,7 +98,8 @@ func main() {
 	cacheFlag := flags.Bool("cache", false, "with store=true, also wire protoc-gen-cache's caches from cache.v1 annotations (Go: list caches, cache_module; Rust: cache_repositories in the app shell)")
 	cacheModule := flags.String("cache_module", "", "Go import path of protoc-gen-cache's output, for cache=true")
 	rustRepositoryModule := flags.String("rust_repository_module", "crate::repository", "Rust module containing protoc-gen-store's lang=rust repositories (per proto package: Repositories, repositories, and with cache=true protoc-gen-cache's cache::cache_repositories beside them)")
-	rustDatabase := flags.String("rust_database", "postgres", "the SQL dialect the Rust app shell opens with store=true: postgres, mysql or sqlite")
+	rustDatabase := flags.String("rust_database", "postgres", "the database the Rust app shell opens with store=true: postgres, mysql, sqlite or d1 (Cloudflare D1)")
+	rustCDN := flags.Bool("rust_cdn", false, "with app=<name>, Rust: also open a Cloudflare CDN purger from [cdn] (app::open_cdn; needs tpp-cache's cdn feature)")
 
 	run(protogen.Options{ParamFunc: flags.Set}, func(p *protogen.Plugin) error {
 		p.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)
@@ -113,7 +114,7 @@ func main() {
 			return protokit.RunPlugin(p, protokit.Options{Target: rustgen.TargetName, Strict: *strict, Version: v},
 				rustgen.Plugin(rustgen.Settings{
 					ProtoModule: *rustProtoModule, ServiceModule: *rustServiceModule, ServicexModule: *rustServicexModule, ErrorDomain: *domain, App: *app,
-					Store: *store, Cache: *cacheFlag, RepositoryModule: *rustRepositoryModule, Database: *rustDatabase,
+					Store: *store, Cache: *cacheFlag, RepositoryModule: *rustRepositoryModule, Database: *rustDatabase, CDN: *rustCDN,
 				}, cfg, generator.ResolveVersions(v)))
 		}
 		if *language != "go" {

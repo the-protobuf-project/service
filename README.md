@@ -697,13 +697,22 @@ in both languages:
 | `Timeout` / `Unimplemented` (e.g. undelete without soft delete) / other | DEADLINE_EXCEEDED / UNIMPLEMENTED / INTERNAL | |
 
 The crate depends on `tpp-database` (with the `orm-*` feature of
-`rust_database`). With `app=<name>`, the shell adds `[database]` (`url`,
+`rust_database`, or `d1`). With `app=<name>`, the shell adds `[database]` (`url`,
 `max_connections`) to the configuration, `app::open_database`,
 `app::Repositories` with `app::repositories(db, pool)` (calling each proto
 package's `repositories` from `rust_repository_module`, which protoc-gen-store
 `lang=rust target=repository` generates), and `app::Handlers::with_repositories`;
 `app::run` opens the database, builds the repositories and fills the
 handlers before assembling. See [examples/rust-store](examples/rust-store).
+
+`rust_database=d1` opens Cloudflare D1 instead of a sqlx pool, through
+`tpp-database`'s `d1` feature: `[database]` is `account_id`, `database_id`
+and `api_token` (set through `<NAME>_DATABASE__API_TOKEN`), and
+`app::open_database` reads the database once, so a wrong id or a token
+without access fails at startup. D1 is SQLite served over HTTP with no
+interactive transactions, and has no local server its REST API reaches, so
+the dev profile points at a development database too
+(`wrangler d1 create <name>-dev`).
 
 ### The application shell
 
@@ -772,6 +781,11 @@ protos.
   `cache.rs` protoc-gen-cache `lang=rust` writes beside protoc-gen-store's
   `mod.rs`. Without `app=` there is nothing to wire: wrap a package's
   repositories yourself before `with_repositories`.
+  With `rust_cdn=true` the shell also adds `[cdn]` (`enabled`, `zone_id`,
+  `api_token`) and `app::open_cdn(&cfg.cdn)`, the Cloudflare CDN purger of
+  `tpp-cache`'s `cdn` feature (`None` when `[cdn]` is off). It is opt-in, and
+  needs neither `store=true` nor `cache=true`: the handlers are built before
+  `app::run`, so open it from `app::config::load()` and hand it to them.
 
 ## Reference
 
@@ -793,7 +807,8 @@ protos.
 | `app` | | Also generate the application shell of this name ([Go](#the-application-shell), [Rust](#the-application-shell-1)). Go: needs `store=true`. |
 | `rust_repository_module` | `crate::repository` | Rust, `store=true`: where protoc-gen-store's `lang=rust` repositories live (`<module>::<package path>`), with protoc-gen-cache's `cache` module beside each. |
 | `rust_servicex_module` | `grpc::servicex` | Rust: the servicex runtime the generated services build on (runtime-rs `tpp-grpc`, depended on as `grpc`); the generated root re-exports it as `servicex`. |
-| `rust_database` | `postgres` | Rust app shell, `store=true`: the SQL dialect it opens (`postgres`, `mysql`, `sqlite`). |
+| `rust_database` | `postgres` | Rust app shell, `store=true`: the database it opens (`postgres`, `mysql`, `sqlite`, or `d1` for Cloudflare D1). |
+| `rust_cdn` | `false` | Rust app shell: also open a Cloudflare CDN purger from `[cdn]` (`app::open_cdn`; needs `tpp-cache` with `features = ["cdn"]`). |
 
 `bindings` places the bindings per proto package, for a module whose stubs
 live elsewhere (the BSR's `…/grpc/go/…/<pkg>grpc` layout, standalone gateway):
