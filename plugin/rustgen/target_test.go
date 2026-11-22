@@ -177,3 +177,52 @@ func TestRustDeterminism(t *testing.T) {
 		})
 	}
 }
+
+// TestRustD1AndCDN holds rust_database=d1 and rust_cdn=true to the app shell
+// they promise: D1 opened over its REST API rather than a sqlx pool, and
+// open_cdn beside it, each with its section of the configuration.
+func TestRustD1AndCDN(t *testing.T) {
+	req := golden.BuildRequest(t, filepath.Join("..", "generator", "testdata", "cases", "directory"))
+	p, err := protogen.Options{}.New(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := rustgen.Settings{App: "acme", Store: true, Database: "d1", CDN: true}
+	if err := protokit.RunPlugin(p, protokit.Options{Target: rustgen.TargetName}, testPlugin(settings, nil)); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{}
+	for _, f := range p.Response().File {
+		files[f.GetName()] = f.GetContent()
+	}
+	for name, want := range map[string][]string{
+		"app/mod.rs":            {"::database::d1::D1Client::connect(", "D1Provider::new(Arc::new(client))", "pub async fn open_cdn(", "::cache::cdn::Purger::connect("},
+		"app/config.rs":         {"pub database_id: String,", "pub cdn: CdnConfig,", "pub struct CdnConfig {", "cdn.enabled requires cdn.zone_id and cdn.api_token"},
+		"app/acme.release.toml": {"[database]\n# Cloudflare D1.", "[cdn]\nenabled = false\n"},
+	} {
+		got, ok := files[name]
+		if !ok {
+			t.Fatalf("%s not generated", name)
+		}
+		for _, w := range want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s lacks %q", name, w)
+			}
+		}
+	}
+	if strings.Contains(files["app/mod.rs"], "sqlx") {
+		t.Error("app/mod.rs opens a sqlx pool for d1")
+	}
+}
+
+func TestRustUnknownDatabase(t *testing.T) {
+	req := golden.BuildRequest(t, filepath.Join("..", "generator", "testdata", "cases", "directory"))
+	p, err := protogen.Options{}.New(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = protokit.RunPlugin(p, protokit.Options{Target: rustgen.TargetName}, testPlugin(rustgen.Settings{Store: true, Database: "oracle"}, nil))
+	if err == nil || !strings.Contains(err.Error(), "want postgres, mysql, sqlite or d1") {
+		t.Fatalf("got %v", err)
+	}
+}

@@ -73,8 +73,13 @@ type Settings struct {
 	// (cache::cache_repositories) beside them.
 	RepositoryModule string
 	// Database is the SQL dialect the app shell opens with Store: postgres,
-	// mysql or sqlite.
+	// mysql, sqlite or d1 (Cloudflare D1, over its REST API rather than a
+	// sqlx pool).
 	Database string
+	// CDN has the app shell open a Cloudflare CDN purger from [cdn]
+	// (app::open_cdn), over runtime-rs's cache::cdn. Opt-in, unlike Go's,
+	// because tpp-cache's cdn feature links a network client.
+	CDN bool
 }
 type Target struct {
 	Settings Settings
@@ -108,8 +113,8 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 	if t.Settings.Cache && !t.Settings.Store {
 		return generator.ErrCacheWithoutStore
 	}
-	if t.Settings.Store && sqlxPool[t.Settings.Database] == "" {
-		return fmt.Errorf("service: rust_database=%s: want postgres, mysql or sqlite", t.Settings.Database)
+	if t.Settings.Store && sqlxPool[t.Settings.Database] == "" && t.Settings.Database != "d1" {
+		return fmt.Errorf("service: rust_database=%s: want postgres, mysql, sqlite or d1", t.Settings.Database)
 	}
 	for _, v := range []string{t.Settings.ProtoModule, t.Settings.ServiceModule, t.Settings.ServicexModule, t.Settings.RepositoryModule} {
 		if !validModule(v) {

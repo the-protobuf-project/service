@@ -88,7 +88,31 @@ func (t *Target) appStore(module string, services []appService) string {
 		b.WriteString("});\n")
 	}
 	b.WriteString("self\n}\n}\n")
-	fmt.Fprintf(&b, `
+	if t.Settings.Database == "d1" {
+		b.WriteString(`
+/// Opens the records database [database] configures: the Cloudflare D1
+/// database database.database_id of account database.account_id, reached
+/// over D1's REST API with database.api_token. The database is read once
+/// here, so a wrong id or a token without access fails at startup.
+pub async fn open_database(cfg: &config::DatabaseConfig) -> Result<::database::records::DB, Error> {
+    use ::database::records::Provider as _;
+    let open = |e: ::database::Error| Error::Open(format!("database: {e}"));
+    let client = ::database::d1::D1Client::connect(::database::d1::D1Config {
+        account_id: cfg.account_id.clone(),
+        api_token: cfg.api_token.clone(),
+        database_id: cfg.database_id.clone(),
+        ..Default::default()
+    })
+    .await
+    .map_err(open)?;
+    ::database::d1::D1Provider::new(Arc::new(client))
+        .set_database("")
+        .await
+        .map_err(open)
+}
+`)
+	} else {
+		fmt.Fprintf(&b, `
 /// Opens the records database [database] configures: a %[1]s pool of
 /// database.max_connections (0 keeps sqlx's default) over database.url, the
 /// records driver over it.
@@ -104,6 +128,7 @@ pub async fn open_database(cfg: &config::DatabaseConfig) -> Result<::database::r
     Ok(::database::orm::driver(pool))
 }
 `, t.Settings.Database, sqlxPool[t.Settings.Database])
+	}
 	if t.Settings.Cache {
 		b.WriteString(`
 /// Opens the cache [cache] configures, or None when it is off: keys under
@@ -214,6 +239,26 @@ pub struct DatabaseConfig {
 		"sqlite":   "sqlite://" + name + ".db?mode=rwc",
 	}[t.Settings.Database]
 	devTOML := "\n[database]\nurl = \"" + devURL + "\"\n"
+	if t.Settings.Database == "d1" {
+		types = `
+/// The records database (store=true): a Cloudflare D1 database, over its
+/// REST API. SQLite underneath, with no interactive transactions.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DatabaseConfig {
+    /// The account that owns the database.
+    pub account_id: String,
+    /// The database the repositories persist in (wrangler d1 list shows it).
+    pub database_id: String,
+    /// Needs D1 read and write. A secret.
+    pub api_token: String,
+}
+`
+		validate = "        if self.database.account_id.is_empty() || self.database.database_id.is_empty() || self.database.api_token.is_empty() {\n            return Err(\"database (d1) requires account_id, database_id and api_token\".into());\n        }\n"
+		releaseTOML = "\n[database]\n# Cloudflare D1. Secret: set " + envPrefix(name) + "DATABASE__API_TOKEN at deploy time.\naccount_id = \"\"\ndatabase_id = \"\"\napi_token = \"\"\n"
+		// D1 has no local server the REST API reaches, so development points
+		// at a real (development) database too.
+		devTOML = "\n[database]\n# A development D1 database: wrangler d1 create " + name + "-dev. Secret: set " + envPrefix(name) + "DATABASE__API_TOKEN.\naccount_id = \"\"\ndatabase_id = \"\"\n"
+	}
 	if t.Settings.Cache {
 		sections += "    /// The cache the repositories read through (cache=true).\n    #[serde(default)]\n    pub cache: CacheConfig,\n"
 		types += `
