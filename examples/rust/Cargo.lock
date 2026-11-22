@@ -2195,7 +2195,7 @@ checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 [[package]]
 name = "tpp-agents"
 version = "0.1.0"
-source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#4f874fdd2ae34759c0d57a5bc9f036bf6f387fff"
+source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#7760d3fd1039ee959bb4fbd4bc7d0824a8b5e6c1"
 dependencies = [
  "async-trait",
  "axum",
@@ -2223,7 +2223,7 @@ dependencies = [
 [[package]]
 name = "tpp-config"
 version = "0.1.0"
-source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#4f874fdd2ae34759c0d57a5bc9f036bf6f387fff"
+source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#7760d3fd1039ee959bb4fbd4bc7d0824a8b5e6c1"
 dependencies = [
  "figment",
  "serde",
@@ -2234,7 +2234,7 @@ dependencies = [
 [[package]]
 name = "tpp-grpc"
 version = "0.1.0"
-source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#4f874fdd2ae34759c0d57a5bc9f036bf6f387fff"
+source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#7760d3fd1039ee959bb4fbd4bc7d0824a8b5e6c1"
 dependencies = [
  "async-trait",
  "axum",
@@ -2278,7 +2278,7 @@ dependencies = [
 [[package]]
 name = "tpp-telemetry"
 version = "0.1.0"
-source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#4f874fdd2ae34759c0d57a5bc9f036bf6f387fff"
+source = "git+https://github.com/the-protobuf-project/runtime-rs?branch=main#7760d3fd1039ee959bb4fbd4bc7d0824a8b5e6c1"
 dependencies = [
  "opentelemetry",
  "tracing",
